@@ -1,0 +1,20 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "2cfe9de48160e2b47e0ff350d61837c23e3904001864a7f293ca3d13a1001119",
+  "sha256": "2403c5b51ab0c9318dea46c7f0d2e59bc4587c8a1d7f8413d61aa4836f45344a",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 38.868,
+  "segments": [
+    {
+      "speaker": "Maya",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "Hello, Jordan. This is Maya from the Riverside Community Center. I'm calling about the weekend cooking workshop you booked. Because the kitchen is being repaired on Saturday morning, we've moved the class to Sunday at two in the afternoon. It will still be held in the second-floor kitchen. You don't need to bring any equipment, but please bring two food containers so you can take your dishes home. The workshop fee includes all the ingredients. Please reply to my email by Friday evening to confirm that you can attend. If Sunday doesn't work for you, we'll refund your fee.",
+      "startSeconds": 0.2,
+      "endSeconds": 38.518,
+      "pcmSha256": "37126b6407bd5c76e08174cd4a13cb54ad5ba03d2bdecf5be934e02852f8b857"
+    }
+  ]
+}

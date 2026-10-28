@@ -1,0 +1,44 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "91ae5fb39578817e226bfdbcb592e0969f679b4c085f1ed7f3278e46de1d5df8",
+  "sha256": "8a4c54a94ed7ee3b6817fb29615718d8785a6b238a32558e69733e982c479b1c",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 12.761,
+  "segments": [
+    {
+      "speaker": "",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "Why was the product demonstration postponed?",
+      "startSeconds": 0.2,
+      "endSeconds": 3.599,
+      "pcmSha256": "2734c6b783a4ea5da26c3a6f432b1b5e3785c827877502b4694d2508d7a68db4"
+    },
+    {
+      "speaker": "A",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "A. The presenter is on sick leave.",
+      "startSeconds": 3.949,
+      "endSeconds": 6.538,
+      "pcmSha256": "3a7efde33d97972af76ad28cb8ae19bbf1c627ba147000d8f422e4bc1c9828a7"
+    },
+    {
+      "speaker": "B",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "B. Next Thursday morning.",
+      "startSeconds": 6.888,
+      "endSeconds": 9.187,
+      "pcmSha256": "b6043393e4a3c20e2f4500b913f0895d4de1780af618faacdc73a8b5f6131331"
+    },
+    {
+      "speaker": "C",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "C. A new projector in the meeting room.",
+      "startSeconds": 9.537,
+      "endSeconds": 12.411,
+      "pcmSha256": "520f4207be34f88eeaddb3680eb6cbdc2c4d387ae7d36a6e16e7ecb1f5e3b6ba"
+    }
+  ]
+}

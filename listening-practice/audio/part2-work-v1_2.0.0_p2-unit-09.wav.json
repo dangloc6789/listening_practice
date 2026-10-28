@@ -1,0 +1,44 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "4c0063d663084fb9cd09bf3e1d1ba87f7ffa5be396a5fe7be3bd59926f6d7ad1",
+  "sha256": "7ca817eb12a126fb833a34fee1aebab9b9e30c2902e9f507d7562513dcc29e82",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 15.081,
+  "segments": [
+    {
+      "speaker": "",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "Has the purchase order already been approved in S A P?",
+      "startSeconds": 0.2,
+      "endSeconds": 4.059,
+      "pcmSha256": "887cc50148e38e747aa96a7d1c41ae1eb65de3037c82e39dd33f0d8eec89f75b"
+    },
+    {
+      "speaker": "A",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "A. In the purchasing department.",
+      "startSeconds": 4.409,
+      "endSeconds": 6.758,
+      "pcmSha256": "775c59050b9386e2f8a12ee01b5398baa0e93552a51e1a950921baa87be3d040"
+    },
+    {
+      "speaker": "B",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "B. Yes, the finance manager approved it this morning.",
+      "startSeconds": 7.108,
+      "endSeconds": 11.187,
+      "pcmSha256": "47f84574cfce172c7ad4dd63f3a3421d2ab11c46d74defd1ab3d5e787a150dd0"
+    },
+    {
+      "speaker": "C",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "C. The manager's office is on the third floor.",
+      "startSeconds": 11.537,
+      "endSeconds": 14.731,
+      "pcmSha256": "f4aaadc099f81e18c79aaf08cb58206718bb8732b52b03380229706434fcf540"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "listenlab-local",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Personal original TOEIC-style listening practice with SQLite history and read-only MCP",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.cjs",
+    "audio:build": "node scripts/build-audio.cjs"
+  }
+}

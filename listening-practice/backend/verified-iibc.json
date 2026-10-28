@@ -1,0 +1,30 @@
+{
+  "sourceId": "iibc-lr-part3-sample-32-34",
+  "title": "IIBC / ETS — TOEIC Listening & Reading, official Part 3 sample",
+  "pageUrl": "https://www.iibc-global.org/toeic/test/lr/about/format/sample03.html",
+  "transcriptPageUrl": "https://www.iibc-global.org/toeic/toeic_program/sample_all.html",
+  "termsUrl": "https://www.iibc-global.org/english/toeic/test/lr/about/format.html",
+  "questionNumbers": [
+    "32",
+    "33",
+    "34"
+  ],
+  "materialType": "official-sample",
+  "integration": "external-link-only",
+  "checkedAt": "2026-10-28T15:30:24.397Z",
+  "audioFileName": "Part3No32_34.mp3",
+  "sameAudioReferencedByBothPages": true,
+  "audioHead": {
+    "status": 200,
+    "contentType": "audio/mpeg",
+    "contentLength": 1733821
+  },
+  "publisherAnswerKey": {
+    "32": "B",
+    "33": "D",
+    "34": "A"
+  },
+  "pageSha256": "0a02e6dfc36b51381e99cee22d835df70dace0dafaa877cde63027761368424e",
+  "transcriptPageSha256": "672e9f0aec161661c0a1ce74e62f00fd69be605f9cfec30b92de052c17270c98",
+  "rightsDecision": "No reproduction permission established. Open the official page; keep only source references, question numbers, answer-key facts and personal attempt records locally."
+}

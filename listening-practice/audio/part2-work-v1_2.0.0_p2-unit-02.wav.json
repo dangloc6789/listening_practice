@@ -1,0 +1,44 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "d7dd432ebd57937858c36cd6d8fa2586cd7889ac4a45047c3e5da1871a824474",
+  "sha256": "763b8b6b3aa2eab6a3de5ed3e25f62d4eba82f62d0957c126c9dba527bc6ff14",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 12.946,
+  "segments": [
+    {
+      "speaker": "",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "Who's covering reception while Mia is at lunch?",
+      "startSeconds": 0.2,
+      "endSeconds": 3.609,
+      "pcmSha256": "b4a593dbf03d01e08024a43bd965c3b5b17d219ffd34177f5fad629541bd84ee"
+    },
+    {
+      "speaker": "A",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "A. At about twelve thirty.",
+      "startSeconds": 3.959,
+      "endSeconds": 6.063,
+      "pcmSha256": "fd824192d92153677d16ace316a677d74754e4cb7e104500f6a6079fae97b704"
+    },
+    {
+      "speaker": "B",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "B. Daniel from the administration team.",
+      "startSeconds": 6.413,
+      "endSeconds": 9.467,
+      "pcmSha256": "a85a9627883ae8c3b164f12d2818ec4fbaa13dd569ee0d96e1f412003f5c80f1"
+    },
+    {
+      "speaker": "C",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "C. The desk next to the entrance.",
+      "startSeconds": 9.817,
+      "endSeconds": 12.596,
+      "pcmSha256": "1324309c7a66d999db300e0bbaf96301f8f9a20e6c095f65864e5c50d661010a"
+    }
+  ]
+}

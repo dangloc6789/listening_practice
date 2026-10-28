@@ -1,0 +1,20 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "07c53c06fde13339978a94472f8db42db3cffb104fd6e0dd1e01d540baad01db",
+  "sha256": "75c0cd95ca657c31de5ef27d09eaca45e1fce0893528dec57cdff6baa451cafb",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 34.278,
+  "segments": [
+    {
+      "speaker": "Thông báo",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "This is a message from the information technology team. Our S A P training system will be unavailable this Saturday from eight in the morning until noon while we install a software update. The production system will remain available, so regular business activities can continue. Please save your practice work and log out of the training system by seven forty-five. When the update is complete, we will send a confirmation email. If you need help signing in afterward, contact the help desk rather than creating a new account.",
+      "startSeconds": 0.2,
+      "endSeconds": 33.928,
+      "pcmSha256": "e062fa3f58a50a453561f8aaaeeb496dd5cbe443a2bb0e43d5fa4c574e1c3804"
+    }
+  ]
+}

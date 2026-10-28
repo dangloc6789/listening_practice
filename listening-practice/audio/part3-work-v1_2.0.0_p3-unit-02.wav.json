@@ -1,0 +1,60 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "5d6c7bbe0ecb886be22aedb2b1a4ae14401ef0fca2be6aa14a4008fc6981fbe2",
+  "sha256": "781224d0fade43cf80f1a086965016e1334a556487b8cc1aeadd0ce6a896ec62",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 35.751,
+  "segments": [
+    {
+      "speaker": "Nora",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "Ben, the warehouse printer stopped producing shipping labels after this morning's software update.",
+      "startSeconds": 0.2,
+      "endSeconds": 6.428,
+      "pcmSha256": "5d1fc42d6cceb9607a4edd5b7ced6f4cb4ebdd29863baa35c59c576423496c8f"
+    },
+    {
+      "speaker": "Ben",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "Can other applications still print?",
+      "startSeconds": 6.778,
+      "endSeconds": 9.542,
+      "pcmSha256": "95d6e4ed7feb8b6c5896bcbcc2efaa2a0ebf288b82a549e581975c5d20af5a67"
+    },
+    {
+      "speaker": "Nora",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "Yes. Only the labels from S A P are affected. We've checked the paper and the network connection.",
+      "startSeconds": 9.892,
+      "endSeconds": 17.5,
+      "pcmSha256": "b8e873b82d24c2e1a89c6ac049cef4229788f27d40ebb4fa8e52ea7e1a673261"
+    },
+    {
+      "speaker": "Ben",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "I'll check the print settings remotely. Please send me a screenshot of the error message and the printer name.",
+      "startSeconds": 17.85,
+      "endSeconds": 24.909,
+      "pcmSha256": "4db1bca284691f86081a89d76b93a319bc16ff8dc1f1c54adf1f9c930aed8ab4"
+    },
+    {
+      "speaker": "Nora",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "I'll do that now. The next delivery leaves at three.",
+      "startSeconds": 25.259,
+      "endSeconds": 29.463,
+      "pcmSha256": "505cf70074dcb471c69a630834f88c8d345276a1f423decd1985497ca75b55ec"
+    },
+    {
+      "speaker": "Ben",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "If I can't fix it within thirty minutes, use the backup printer in the packing area.",
+      "startSeconds": 29.813,
+      "endSeconds": 35.401,
+      "pcmSha256": "7b29e5ef23d877f194a63ba5cf1d35469a78540d4c7ee31bb99636993004d312"
+    }
+  ]
+}

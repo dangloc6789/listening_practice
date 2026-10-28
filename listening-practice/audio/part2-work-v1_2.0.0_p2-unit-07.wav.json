@@ -1,0 +1,44 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "b529cd279c7bf69088800fae76888fbe4e43c697c138bf77af274e617b65a18a",
+  "sha256": "cf7a8d50c97ed32515a587d59fbbed8ef54f3f891729f39248c22e6c3a742fe1",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 12.886,
+  "segments": [
+    {
+      "speaker": "",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "How often should we back up the test database?",
+      "startSeconds": 0.2,
+      "endSeconds": 3.619,
+      "pcmSha256": "55855baaf2376771d00462ccc5a6529204757022ab6c720b9b8ff552ee5f185f"
+    },
+    {
+      "speaker": "A",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "A. On a separate backup server.",
+      "startSeconds": 3.969,
+      "endSeconds": 6.493,
+      "pcmSha256": "369f725a95d3a2c6d5b2187f39220ed727a1f728cf9cce5a9be2c0bba9c8d941"
+    },
+    {
+      "speaker": "B",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "B. The support team did it.",
+      "startSeconds": 6.843,
+      "endSeconds": 9.132,
+      "pcmSha256": "2b35fa4510fb7453c11ff91e2c1586f0d14b114ab77b89c01b7ea90b5952df9e"
+    },
+    {
+      "speaker": "C",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "C. Every evening after business hours.",
+      "startSeconds": 9.482,
+      "endSeconds": 12.536,
+      "pcmSha256": "60a79681d3d1b22a99eb9aed2abd05de2a4371af1bf0afeec4e87da3e9981902"
+    }
+  ]
+}

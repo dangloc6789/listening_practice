@@ -1,0 +1,44 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "34cf490f38d0ac8a5a92fcc6b61e3889c2c69d0a45502f8524185014a0ca2baf",
+  "sha256": "4ca551df538c7be003c02ce80135d7b7d461b90543f7381855a9e4a2c2b4acf1",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 14.151,
+  "segments": [
+    {
+      "speaker": "",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "Would you rather join by video or come to the office?",
+      "startSeconds": 0.2,
+      "endSeconds": 3.794,
+      "pcmSha256": "52a2fa3711bc317fe6d936b3d7a824a5b4e696561b028cc77abcae713983eed6"
+    },
+    {
+      "speaker": "A",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "A. She joined the sales team last month.",
+      "startSeconds": 4.144,
+      "endSeconds": 7.178,
+      "pcmSha256": "451407201940d16c652c6220247f54a42ed50ea6ef5cf637755f876a225c6f1d"
+    },
+    {
+      "speaker": "B",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "B. I'll connect from home, thanks.",
+      "startSeconds": 7.528,
+      "endSeconds": 10.717,
+      "pcmSha256": "7f636c3907958d5f7f0004bfc76e644ad9e98344a8a7962170f639c30300ce8e"
+    },
+    {
+      "speaker": "C",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "C. The room has already been booked.",
+      "startSeconds": 11.067,
+      "endSeconds": 13.801,
+      "pcmSha256": "7787c08261bbacd0451a3faa1ef44ac582c7cb00ae96d47ed2e2a1fac5a3e9c8"
+    }
+  ]
+}

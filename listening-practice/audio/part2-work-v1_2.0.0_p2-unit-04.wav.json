@@ -1,0 +1,44 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "45841c18f78160036b678f03dc7646da1deb83b0b9907bdfd10526c2b31e12ae",
+  "sha256": "419dd07cc1f04c90d1ce5cb34ff0be538f8d72f10cd3b19412dfc0f390b752c0",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 13.466,
+  "segments": [
+    {
+      "speaker": "",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "Where are we meeting the client this afternoon?",
+      "startSeconds": 0.2,
+      "endSeconds": 3.384,
+      "pcmSha256": "5c1666b41ff94a5ea60c1e9dbd23208ab087ed8572d374d62bdcb7534c840ee5"
+    },
+    {
+      "speaker": "A",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "A. It starts at two o'clock.",
+      "startSeconds": 3.734,
+      "endSeconds": 6.123,
+      "pcmSha256": "3dad07bdb71c5c424403333b976bbe13ed8a25e8e7b3d896ad6d5fef186ef300"
+    },
+    {
+      "speaker": "B",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "B. Yes, everyone has been invited.",
+      "startSeconds": 6.473,
+      "endSeconds": 9.652,
+      "pcmSha256": "2fa9d142bd2d24c664913183e4160bc32439b63ef28f1ffa3d446311086cf059"
+    },
+    {
+      "speaker": "C",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "C. In the conference room on the third floor.",
+      "startSeconds": 10.002,
+      "endSeconds": 13.116,
+      "pcmSha256": "49e78e8af661e3f40821d28548998e873e19bc2f0cbc68523b1deadf506d5c32"
+    }
+  ]
+}

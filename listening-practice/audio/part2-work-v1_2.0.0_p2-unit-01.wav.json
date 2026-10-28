@@ -1,0 +1,44 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "15f16a1fa0cd9276f4e43bdb2715774b08d922e791e01644f691a0a1e543e424",
+  "sha256": "dba2fda4cbe94c015a39249123f9088960a34f8757c59b5debddbabdd230cfc0",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 13.226,
+  "segments": [
+    {
+      "speaker": "",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "When do we need to submit our expense reports?",
+      "startSeconds": 0.2,
+      "endSeconds": 3.634,
+      "pcmSha256": "462a89393b3ab7b211bc65c8c72c9339916ffed361c6d0f494431deb85aa1594"
+    },
+    {
+      "speaker": "A",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "A. By five o'clock on Friday.",
+      "startSeconds": 3.984,
+      "endSeconds": 6.548,
+      "pcmSha256": "3461e9c062fdcbd728484dde25a4f26135f6c65cba79b5fbb4add2b038f1a401"
+    },
+    {
+      "speaker": "B",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "B. In the finance office.",
+      "startSeconds": 6.898,
+      "endSeconds": 9.167,
+      "pcmSha256": "4c827839c55db51bd5f043f83e3ee6e55a927215e5f2fc17336ef357322708fc"
+    },
+    {
+      "speaker": "C",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "C. Yes, the reports have been approved.",
+      "startSeconds": 9.517,
+      "endSeconds": 12.876,
+      "pcmSha256": "098d7fe3cd34e15f75fd103463f1d1eea8cb7d88ea4c9e7244ef4ac22a7b35ce"
+    }
+  ]
+}

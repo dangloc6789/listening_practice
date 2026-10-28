@@ -1,0 +1,52 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "2d5d1bf544b5cc312a76cfe0662c28546642dd330016b045671e1ed16906faad",
+  "sha256": "8f16a6284694415f426daddfb43180a0e026a60d3a106290760111534460bee1",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 39.092,
+  "segments": [
+    {
+      "speaker": "Linh",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "Hi, Alex. The purchasing team needs a training session on the new S A P screen. Could we use the training room on Thursday?",
+      "startSeconds": 0.2,
+      "endSeconds": 9.678,
+      "pcmSha256": "cd76c16f8a6a8e0e270fa82e2c256f025204e9a6832b296c8ad2b60141e399f3"
+    },
+    {
+      "speaker": "Alex",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "The room is booked all Thursday. It's free on Friday morning, though.",
+      "startSeconds": 10.028,
+      "endSeconds": 15.467,
+      "pcmSha256": "19d608c484add5691130ac57e4772fafd85a28555eff1cd799dbcf5ac9bd7785"
+    },
+    {
+      "speaker": "Linh",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "Friday works. Let's start at nine and finish before eleven. There will be twelve participants.",
+      "startSeconds": 15.817,
+      "endSeconds": 23.235,
+      "pcmSha256": "c7e20b01af431256d3d64c32efabbb381174efd568b8364f598af61a42ee02df"
+    },
+    {
+      "speaker": "Alex",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "All right. I'll book the room. Can you send me the participant list by tomorrow afternoon? I need it to create their training accounts.",
+      "startSeconds": 23.585,
+      "endSeconds": 33.858,
+      "pcmSha256": "3c1fd450cc5a82d85971d0226aa3834fcf0af74ad85401ff12ffc9aef42d4c78"
+    },
+    {
+      "speaker": "Linh",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "Sure. I'll also ask everyone to bring a laptop.",
+      "startSeconds": 34.208,
+      "endSeconds": 38.742,
+      "pcmSha256": "e17ec2fd9b77ab58909aa19b0a4c2756ba329933a645eb3dbf635a42603ed01e"
+    }
+  ]
+}

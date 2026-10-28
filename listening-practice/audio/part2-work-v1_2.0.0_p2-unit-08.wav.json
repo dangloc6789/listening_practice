@@ -1,0 +1,44 @@
+{
+  "kind": "tts-file",
+  "engine": "Microsoft SAPI 5 / offline Windows voices",
+  "sourceHash": "3441165749a1c6afa402c53e45a4605527c5d054e5744c248b84b6fd7b59395a",
+  "sha256": "cf1b3279426a53991a0fb461da39fe1f5c87aaeb8022669805b9a1059395ade1",
+  "sampleRate": 22050,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "durationSeconds": 12.216,
+  "segments": [
+    {
+      "speaker": "",
+      "voice": "Microsoft David Desktop - English (United States)",
+      "text": "Who can help me reset my S A P password?",
+      "startSeconds": 0.2,
+      "endSeconds": 3.674,
+      "pcmSha256": "072adf36c6339b9a16a2b2b00867426ce9f53b11decaa279a56a50d3f5e48ca7"
+    },
+    {
+      "speaker": "A",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "A. Contact the help desk.",
+      "startSeconds": 4.024,
+      "endSeconds": 6.368,
+      "pcmSha256": "46695f9e8a9f83a4730b17d09ac9cd7f9eb7998e54122868b69d8c69de48a352"
+    },
+    {
+      "speaker": "B",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "B. It takes about five minutes.",
+      "startSeconds": 6.718,
+      "endSeconds": 9.357,
+      "pcmSha256": "841d254caa7eeab225e9f15fcb4b1cf5b1dfe18ebb23c0e71d901f9237d59cc5"
+    },
+    {
+      "speaker": "C",
+      "voice": "Microsoft Zira Desktop - English (United States)",
+      "text": "C. Before you log in.",
+      "startSeconds": 9.707,
+      "endSeconds": 11.866,
+      "pcmSha256": "60bbc5a63ec51c848e7433309c6036db9771229a350afab43abd4dced6102a58"
+    }
+  ]
+}
