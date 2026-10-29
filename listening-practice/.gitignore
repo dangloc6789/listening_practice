@@ -9,10 +9,9 @@
 *.db-wal
 *.db-journal
 
-# Server secrets; keep the empty configuration template
+# Local environment configuration; never commit env files or templates
 .env
 .env.*
-!.env.example
 .secrets/
 secrets/
 *.key
@@ -20,6 +19,15 @@ secrets/
 *.pfx
 *-private.pem
 private-key*.pem
+
+# ChatGPT login credentials and accidental exports (also outside .data)
+credentials.bin
+credentials*.json
+chatgpt-auth*.json
+chatgpt-host.json
+auth.json
+tokens.json
+*.token
 
 # Server runtime files, local backups and installed dependencies
 logs/
