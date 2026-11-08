@@ -11,7 +11,9 @@ const MAX_COUNT = 10000;
 const limitations = [
   "Chỉ thống kê nguồn chính thức trong phần chính; bài mẫu chính thức cũng không phải đề đầy đủ và không quy đổi thành điểm TOEIC.",
   "Bài AI/TTS và tài liệu người dùng cung cấp được thống kê riêng; xác nhận của người dùng không phải chứng nhận của nhà xuất bản.",
-  "Bài hiện tại dùng file WAV TTS tạo sẵn; lịch sử cũ có thể dùng TTS trình duyệt. Xem nguồn audio của từng lượt. TTS không phải bản thu người thật hay audio thi ETS.",
+  "General listening (ví dụ British Council) được thống kê riêng theo loại bài, không cộng vào các Part hoặc độ chính xác TOEIC.",
+  "Trong nghe tổng quát, câu hỏi AI soạn từ audio/tài liệu cá nhân được thống kê riêng, không cộng với câu hỏi và key của tài liệu gốc.",
+  "Bài AI có thể dùng WAV TTS hoặc câu hỏi AI soạn từ audio/tài liệu cá nhân; lịch sử cũ có thể dùng TTS trình duyệt. Audio cá nhân do người dùng cung cấp, không tự coi là TTS. Xem loại và nguồn audio từng lượt; không đồng nhất TTS với bản thu người thật hoặc audio ETS.",
   "Nguồn chính thức có định danh câu ổn định; làm lại hoặc đổi phiên bản của cùng câu không thành nội dung mới. Vài câu mẫu không đủ kết luận tiến bộ trên đề chưa gặp.",
   "Số lượt phát, lượt nghe hết, giọng và tốc độ do trình duyệt báo lại; máy chủ chấm đáp án nhưng không xác minh người học thực sự nghe.",
   "Thời gian làm bài tính từ lúc máy chủ tạo lượt đến khi nhận bài nộp, có thể bao gồm thời gian nghỉ hoặc đóng trang."
@@ -25,6 +27,7 @@ function fail(message, status = 400) {
 }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function accuracy(correct, answered) { return answered ? Math.round(correct / answered * 1000) / 10 : 0; }
+function partLabel(part) { return part === 'general-listening' ? 'Nghe tổng quát' : `TOEIC Part ${part}`; }
 function stats() { return { attempts: 0, answered: 0, correct: 0, accuracy: 0, firstAnswered: 0, firstCorrect: 0, firstAccuracy: 0 }; }
 function finishStats(value) {
   value.accuracy = accuracy(value.correct, value.answered);
@@ -231,8 +234,8 @@ class Store {
     if (fromDate && toDate && fromDate > toDate) fail("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.");
     let partNumber = null;
     if (part !== undefined && part !== null && part !== "") {
-      partNumber = Number(part);
-      if (![2, 3, 4].includes(partNumber)) fail("Part phải là 2, 3 hoặc 4.");
+      partNumber = part === 'general-listening' ? part : Number(part);
+      if (![2, 3, 4, 'general-listening'].includes(partNumber)) fail("Part phải là 2, 3, 4 hoặc general-listening.");
     }
     const rows = this.allAttempts(userId).filter((attempt) => {
       const date = this.day(attempt.submittedAt);
@@ -243,12 +246,18 @@ class Store {
   }
 
   getProgress(userId, { category='official' }={}) {
-    if(!['official','ai','user','all'].includes(category))fail('category phải là official, ai hoặc user.');
+    if(!['official','ai','user','all','general-listening','general-listening-ai'].includes(category))fail('category phải là official, ai, user, all, general-listening hoặc general-listening-ai.');
     const allAttempts=this.allAttempts(userId);
-    const attempts = category==='all'?allAttempts:allAttempts.filter(attempt=>(attempt.source?.kind || 'ai')===category);
-    const bySource=Object.fromEntries(['official','ai','user'].map(kind=>{const value=stats();allAttempts.filter(attempt=>(attempt.source?.kind||'ai')===kind).forEach(attempt=>addStats(value,attempt));return [kind,finishStats(value)];}));
+    const toeicAttempts=allAttempts.filter(attempt=>attempt.part!=='general-listening');
+    const isAI=attempt=>(attempt.source?.kind||'ai')==='ai'||attempt.source?.materialType==='ai-generated-exercise'||attempt.source?.verification?.questionsGeneratedByAI===true;
+    const generalAttempts=allAttempts.filter(attempt=>attempt.part==='general-listening'&&!isAI(attempt));
+    const generalAIAttempts=allAttempts.filter(attempt=>attempt.part==='general-listening'&&isAI(attempt));
+    const isGeneral=category==='general-listening'||category==='general-listening-ai';
+    const attempts = category==='general-listening'?generalAttempts:category==='general-listening-ai'?generalAIAttempts:category==='all'?toeicAttempts:toeicAttempts.filter(attempt=>(attempt.source?.kind || 'ai')===category);
+    const bySource=Object.fromEntries(['official','ai','user'].map(kind=>{const value=stats();toeicAttempts.filter(attempt=>(attempt.source?.kind||'ai')===kind).forEach(attempt=>addStats(value,attempt));return [kind,finishStats(value)];}));
+    const byLearningType=Object.fromEntries([['toeic',toeicAttempts],['general-listening',generalAttempts],['general-listening-ai',generalAIAttempts]].map(([kind,rows])=>{const value=stats();rows.forEach(attempt=>addStats(value,attempt));return [kind,finishStats(value)];}));
     const overall = stats();
-    const byPart = [2, 3, 4].map((part) => ({ part, ...stats() }));
+    const byPart = (isGeneral?['general-listening']:[2, 3, 4]).map((part) => ({ part, ...stats() }));
     const daily = new Map();
     const reviews = new Map();
     for (const attempt of attempts) {
@@ -272,16 +281,17 @@ class Store {
     const review = [...reviews.values()].filter((item) => item.wrongCount > 0)
       .sort((a, b) => b.wrongCount - a.wrongCount || b.lastSubmittedAt.localeCompare(a.lastSubmittedAt));
     const nextSteps = [];
-    if (!overall.answered) nextSteps.push("Hoàn thành một đoạn luyện nghe để tạo mốc ban đầu.");
+    if (!overall.answered) nextSteps.push(category==='general-listening-ai'?"Hoàn thành một bài nghe tổng quát với câu hỏi AI soạn để tạo mốc riêng.":category==='general-listening'?"Hoàn thành một bài nghe tổng quát từ tài liệu gốc để tạo mốc riêng.":"Hoàn thành một đoạn luyện nghe để tạo mốc ban đầu.");
     else {
       const weakest = byPart.filter((item) => item.firstAnswered > 0).sort((a, b) => a.firstAccuracy - b.firstAccuracy)[0];
-      if (weakest) nextSteps.push(`Ưu tiên Part ${weakest.part}: độ chính xác lượt đầu ${weakest.firstAccuracy}% trên ${weakest.firstAnswered} câu.`);
+      if (weakest) nextSteps.push(`Ưu tiên ${category==='general-listening-ai'?'nghe tổng quát với câu hỏi AI soạn':partLabel(weakest.part)}: độ chính xác lượt đầu ${weakest.firstAccuracy}% trên ${weakest.firstAnswered} câu.`);
       if (review.length) nextSteps.push(`Ôn ${review.filter((item) => !item.latestCorrect).length} câu sai chưa sửa ở lượt gần nhất; chú ý dạng “${review[0].skill}”.`);
       nextSteps.push("Nghe lại câu sai, đối chiếu lời thoại và ghi lại từ mới; sau đó thử một nội dung chưa từng làm để kiểm tra khả năng chuyển sang bài mới.");
     }
     return {
-      timezone: this.timezone, category, bySource, overall, byPart,
-      coverage:{uniqueQuestions:overall.firstAnswered,repeatedAnswers:overall.answered-overall.firstAnswered,limitedSample:category==='official'&&overall.firstAnswered<30,note:'Chỉ đếm lần đầu của câu có định danh nguồn ổn định. Điểm tăng khi làm lại không chứng minh tiến bộ trên bài mới.'},
+      timezone: this.timezone, category, bySource, byLearningType, overall, byPart,
+      scope:category==='general-listening-ai'?'Nghe tổng quát với câu hỏi AI soạn; tách khỏi câu hỏi nguồn gốc và TOEIC.':category==='general-listening'?'Nghe tổng quát từ tài liệu gốc/người dùng; không gồm câu hỏi AI hoặc TOEIC.':'Chỉ TOEIC; category=all gồm mọi nguồn TOEIC, không gồm general-listening.',
+      coverage:{uniqueQuestions:overall.firstAnswered,repeatedAnswers:overall.answered-overall.firstAnswered,limitedSample:category==='official'&&overall.firstAnswered<30,note:(category==='general-listening-ai'||category==='ai'?'Câu hỏi AI tạo lại từ cùng audio đã nghe được tính theo định danh audio và số câu, không xem là học liệu nghe mới. ':'')+'Chỉ đếm lần đầu của câu có định danh nguồn ổn định. Điểm tăng khi làm lại không chứng minh tiến bộ trên bài mới.'},
       daily: [...daily.values()].sort((a, b) => b.date.localeCompare(a.date)).map(finishStats),
       review, limitations: [...limitations], nextSteps
     };
@@ -289,11 +299,13 @@ class Store {
 
   getReport(userId) {
     const progress = this.getProgress(userId);
+    const general = this.getProgress(userId,{category:'general-listening'});
+    const generalAI = this.getProgress(userId,{category:'general-listening-ai'});
     return {
       generatedAt: new Date().toISOString(), timezone: this.timezone,
       progress, recentAttempts: this.listAttempts(userId, { pageSize: 20 }).items,
-      separatedProgress:{official:progress,ai:this.getProgress(userId,{category:'ai'}),user:this.getProgress(userId,{category:'user'})},
-      limitations: [...limitations], nextSteps: [...progress.nextSteps]
+      separatedProgress:{official:progress,ai:this.getProgress(userId,{category:'ai'}),user:this.getProgress(userId,{category:'user'}),'general-listening':general,'general-listening-ai':generalAI},
+      limitations: [...limitations], nextSteps: [...progress.nextSteps,...(general.overall.answered?general.nextSteps.map(step=>`[Nghe tổng quát · nguồn gốc] ${step}`):[]),...(generalAI.overall.answered?generalAI.nextSteps.map(step=>`[Nghe tổng quát · AI] ${step}`):[])]
     };
   }
 
@@ -306,7 +318,7 @@ function reportMarkdown(report) {
   const lines = [
     "# Báo cáo luyện nghe Listen Lab", "",
     `Tạo lúc: ${report.generatedAt} | Múi giờ nhóm ngày: ${report.timezone}`,
-    "Nguồn chính thức, AI/TTS và tài liệu cá nhân được tách riêng. Không quy đổi bài mẫu thành điểm TOEIC.", "",
+    "Nguồn chính thức, AI/TTS và tài liệu cá nhân được tách riêng. Nghe tổng quát tách câu hỏi nguồn gốc và câu hỏi AI, không cộng vào TOEIC. Không quy đổi bài mẫu thành điểm TOEIC.", "",
     "## Tiến trình — chỉ nguồn chính thức",
     `- ${overall.attempts} lượt nộp, ${overall.correct}/${overall.answered} câu đúng (${overall.accuracy}%).`,
     `- Lượt đầu theo từng câu/phiên bản: ${overall.firstCorrect}/${overall.firstAnswered} đúng (${overall.firstAccuracy}%).`,
@@ -316,10 +328,22 @@ function reportMarkdown(report) {
     ...progress.daily.map((item) => `- ${item.date}: ${item.correct}/${item.answered} (${item.accuracy}%); lượt đầu ${item.firstCorrect}/${item.firstAnswered} (${item.firstAccuracy}%).`),
     "", "## Câu cần ôn",
     ...(progress.review.length ? progress.review.map((item) => `- ${item.questionId} | Part ${item.part} | ${item.skill}: ${item.prompt} — sai ${item.wrongCount} lần, lượt gần nhất ${item.latestCorrect ? "đúng" : "sai"}.`) : ["Chưa có câu sai được ghi nhận."]),
-    "", "## 20 lượt gần nhất (mới nhất trước)"
+    ""
   ];
+  for(const [category,title] of [['general-listening','Nghe tổng quát — tài liệu gốc, tách riêng TOEIC'],['general-listening-ai','Nghe tổng quát — câu hỏi AI soạn, thống kê riêng']]){
+    const general=report.separatedProgress?.[category];
+    if(!general)continue;
+    const value=general.overall;
+    lines.push('', `## ${title}`,
+      `- ${value.attempts} lượt nộp; ${value.correct}/${value.answered} câu đúng (${value.accuracy}%).`,
+      `- Lần đầu: ${value.firstCorrect}/${value.firstAnswered} (${value.firstAccuracy}%).`,
+      ...general.daily.map(day=>`- ${day.date}: ${day.correct}/${day.answered} câu đúng; lần đầu ${day.firstCorrect}/${day.firstAnswered}.`),
+      ...general.review.map(item=>`- Cần ôn: ${item.prompt} — sai ${item.wrongCount} lần, lượt gần nhất ${item.latestCorrect?'đúng':'sai'}.`),
+      ...general.nextSteps.map(step=>`- ${step}`));
+  }
+  lines.push('', '## 20 lượt gần nhất (mới nhất trước)');
   for (const attempt of report.recentAttempts) {
-    lines.push("", `### ${attempt.unitTitle} · Part ${attempt.part} · ${attempt.correct}/${attempt.answered}`,
+    lines.push("", `### ${attempt.unitTitle} · ${partLabel(attempt.part)} · ${attempt.correct}/${attempt.answered}`,
       `Mã: ${attempt.id} | Bộ: ${attempt.exerciseId}@${attempt.version} | Kiểu: ${attempt.attemptKind}`,
       `Nguồn: ${attempt.source?.name || 'Listen Lab — AI tự soạn (lượt cũ)'} | Loại: ${attempt.source?.materialType || 'ai-authored-tts'} | URL/sách: ${attempt.source?.url || attempt.source?.book || 'nội dung AI tự soạn'} | Test: ${attempt.source?.test || attempt.exerciseTitle} | Câu: ${(attempt.source?.questionNumbers || attempt.questions.map(q=>q.number||q.questionId)).join(', ')}`,
       `Bắt đầu: ${attempt.startedAt} | Nộp: ${attempt.submittedAt} | Thời gian máy chủ: ${attempt.durationMs} ms`,

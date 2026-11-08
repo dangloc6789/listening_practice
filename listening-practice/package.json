@@ -3,9 +3,19 @@
   "version": "2.0.0",
   "private": true,
   "description": "Personal original TOEIC-style listening practice with SQLite history and read-only MCP",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "node --env-file-if-exists=.env server.cjs",
+    "dev": "node --watch --env-file-if-exists=.env server.cjs",
     "audio:build": "node scripts/build-audio.cjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@huggingface/transformers": "4.3.2",
+    "jose": "6.2.13",
+    "pdfjs-dist": "6.4.299",
+    "ws": "8.22.0"
   }
 }

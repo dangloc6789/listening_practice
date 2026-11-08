@@ -7,6 +7,10 @@ const crypto = require('node:crypto');
 const { Store, reportMarkdown } = require('./backend/data.cjs');
 const { exercises, findExercise, publicExercise, audioFilename, audioMetadata } = require('./backend/content.cjs');
 const { createMcpHandler } = require('./backend/mcp.cjs');
+const { Tutor } = require('./backend/tutor.cjs');
+const { DraftGenerator, validateManifest } = require('./backend/drafts.cjs');
+const { closeTranscriber } = require('./backend/transcribe.cjs');
+const { SpeakingPractice } = require('./backend/speaking.cjs');
 
 const ROOT = __dirname;
 const SESSION_COOKIE = 'listenlab_session';
@@ -22,6 +26,8 @@ function loadConfig(overrides = {}) {
     oauthAudience: process.env.OAUTH_AUDIENCE || '', oauthJwksUri: process.env.OAUTH_JWKS_URI || '',
     oauthSubject: process.env.OAUTH_SUBJECT || '', oauthScope: process.env.OAUTH_SCOPE || 'progress:read',
     mcpAllowedOrigins: (process.env.MCP_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean),
+    speakingMaxSeconds:Number(process.env.SPEAKING_MAX_AUDIO_SECONDS||60),
+    speakingDailyLimit:Number(process.env.SPEAKING_DAILY_API_LIMIT||80),
     ...overrides
   };
 }
@@ -38,6 +44,9 @@ function createApp(overrides = {}) {
   if (config.mcpLocalToken && config.mcpLocalToken.length < 32) throw new Error('MCP_LOCAL_TOKEN phải có ít nhất 32 ký tự ngẫu nhiên.');
   if (config.mcpLocalToken && !loopback(config.host)) throw new Error('MCP_LOCAL_TOKEN chỉ dùng kiểm thử loopback; remote phải dùng OAuth.');
   const store = new Store({ dbPath: config.dbPath, timezone: config.timezone });
+  const tutor = new Tutor({ store, config, ...(overrides.tutorOptions || {}) });
+  const drafts = new DraftGenerator({tutor,cacheDir:path.join(config.dbPath===':memory:'?path.join(ROOT,'.data'):path.dirname(config.dbPath),'models'),...(overrides.draftOptions||{})});
+  const speaking=new SpeakingPractice({store,config:{maxSeconds:config.speakingMaxSeconds,dailyLimit:config.speakingDailyLimit,cacheDir:path.join(config.dbPath===':memory:'?path.join(ROOT,'.data'):path.dirname(config.dbPath),'models')},...(overrides.speakingOptions||{})});
   const loginLimits = new Map();
   let mcpHandler;
 
@@ -118,7 +127,7 @@ function createApp(overrides = {}) {
       if (req.headers.host !== expectedHost) fail(403, 'Host không được phép. Hãy dùng địa chỉ đã cấu hình.');
       const url = new URL(req.url, config.publicOrigin);
       if (await mcpHandler(req, res, url)) return;
-      if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true });
+      if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, features: ['general-listening','ai-tutor','material-drafts','speaking'] });
       if (url.pathname.startsWith('/api/') && !['GET', 'HEAD'].includes(req.method)) checkMutationOrigin(req);
       if (req.method === 'GET' && url.pathname === '/api/auth/status') {
         const user = currentUser(req);
@@ -149,7 +158,8 @@ function createApp(overrides = {}) {
         return send(res, 200, { authenticated: true, username: user.username });
       }
       if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
-        requireUser(req);
+        const current = requireUser(req);
+        tutor.cancel(current.id);
         const token = cookieToken(req);
         if (token) store.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hash(token));
         res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${config.publicOrigin.startsWith('https:') ? '; Secure' : ''}`);
@@ -176,11 +186,51 @@ function createApp(overrides = {}) {
       }
       if (url.pathname.startsWith('/api/')) {
         const user = requireUser(req);
-        if (req.method === 'GET' && url.pathname === '/api/exercises') return send(res, 200, { items: store.listExercises(user.id).map(exercise => ({ id: exercise.id, version: exercise.version, title: exercise.title, description: exercise.description, part: exercise.part, original: exercise.original !== false, source:exercise.source, audio: exercise.audio, units: exercise.units.map(unit => ({ id: unit.id, title: unit.title, questionCount: unit.questions.length, audio:audioMetadata(exercise,unit) })), questionCount: exercise.units.reduce((sum, unit) => sum + unit.questions.length, 0) })) });
-        if (req.method === 'POST' && url.pathname === '/api/materials') return send(res,201,publicExercise(store.materials.import(user.id,await body(req,48*1024*1024))));
+        if(url.pathname.startsWith('/api/speaking/')){
+          if(req.method==='GET'&&url.pathname==='/api/speaking/status')return send(res,200,speaking.status(user.id));
+          if(req.method==='GET'&&url.pathname==='/api/speaking/lessons')return send(res,200,speaking.catalog());
+          if(req.method==='GET'&&url.pathname==='/api/speaking/progress')return send(res,200,speaking.progress(user.id));
+          if(req.method==='GET'&&url.pathname==='/api/speaking/sessions')return send(res,200,speaking.history(user.id,{page:url.searchParams.get('page')||1}));
+          if(req.method==='POST'&&url.pathname==='/api/speaking/sessions')return send(res,201,speaking.start(user.id,await body(req,4096)));
+          const match=url.pathname.match(/^\/api\/speaking\/sessions\/([a-zA-Z0-9_-]{1,100})(?:\/(draft|transcriptions|turns|finish|speech))?$/);
+          if(match){
+            if(req.method==='GET'&&!match[2])return send(res,200,speaking.get(user.id,match[1]));
+            if(req.method==='POST'){
+              const input=await body(req,match[2]==='transcriptions'?3*1024*1024:16384);
+              if(match[2]==='draft')return send(res,200,speaking.saveDraft(user.id,match[1],input));
+              if(match[2]==='transcriptions')return send(res,200,await speaking.transcribe(user.id,match[1],input));
+              if(match[2]==='turns')return send(res,200,await speaking.review(user.id,match[1],input));
+              if(match[2]==='finish')return send(res,200,speaking.finish(user.id,match[1],input));
+              if(match[2]==='speech'){const bytes=await speaking.speech(user.id,match[1],input);res.writeHead(200,{'Content-Type':'audio/wav','Content-Length':bytes.length,'Cache-Control':'private, no-store'});return res.end(bytes);}
+            }
+          }
+        }
+        if(req.method==='POST'&&url.pathname==='/api/material-drafts')return send(res,200,await drafts.generate(user.id,await body(req,72*1024*1024)));
+        if(req.method==='POST'&&url.pathname==='/api/material-drafts/validate')return send(res,200,validateManifest((await body(req,1024*1024)).manifest));
+        if (url.pathname.startsWith('/api/tutor/')) {
+          if (req.method === 'GET' && url.pathname === '/api/tutor/status') return send(res,200,tutor.status());
+          if (req.method === 'POST' && url.pathname === '/api/tutor/connect') return send(res,200,await tutor.connect(user.id,await body(req)));
+          if (req.method === 'POST' && url.pathname === '/api/tutor/select') return send(res,200,tutor.select((await body(req)).profileId));
+          if (req.method === 'POST' && url.pathname === '/api/tutor/disconnect') { await body(req);return send(res,200,await tutor.disconnect()); }
+          if (req.method === 'GET' && url.pathname === '/api/tutor/models') return send(res,200,{items:await tutor.models()});
+          if (req.method === 'GET' && url.pathname === '/api/tutor/history') return send(res,200,tutor.history(user.id,url.searchParams.get('attemptId'),url.searchParams.get('questionId')));
+          if (req.method === 'POST' && url.pathname === '/api/tutor/messages') return send(res,200,await tutor.chat(user.id,await body(req)));
+          return send(res,404,{error:'Không tìm thấy API gia sư.'});
+        }
+        if (req.method === 'GET' && url.pathname === '/api/exercises') return send(res, 200, { items: store.listExercises(user.id).map(exercise => ({ id: exercise.id, version: exercise.version, title: exercise.title, description: exercise.description, part: exercise.part, original: exercise.original !== false, canDelete:exercise.id.startsWith('personal-'), source:exercise.source, audio: exercise.audio, units: exercise.units.map(unit => ({ id: unit.id, title: unit.title, questionCount: unit.questions.length, audio:audioMetadata(exercise,unit) })), questionCount: exercise.units.reduce((sum, unit) => sum + unit.questions.length, 0) })) });
+        if (req.method === 'POST' && url.pathname === '/api/materials') {
+          const imported=store.materials.import(user.id,await body(req,48*1024*1024));
+          return send(res,imported.importStatus==='created'?201:200,publicExercise(imported));
+        }
+        const materialMatch=url.pathname.match(/^\/api\/materials\/([a-zA-Z0-9_-]{1,100})$/);
+        if(req.method==='DELETE'&&materialMatch)return send(res,200,store.materials.remove(user.id,materialMatch[1]));
         if (req.method === 'GET' && url.pathname === '/api/import-template') {
-          const template={title:'[Tên bài của bạn]',part:3,source:{name:'[Tên nhà xuất bản/nguồn]',book:'[Tên sách và ấn bản]',test:'[Test và số trang]',materialType:'licensed-book',answerLocation:'[Trang/file đáp án gốc]',rightsNote:'[Quyền sử dụng cá nhân của bạn]'},transcript:null,questions:[1,2,3].map(number=>({number:String(number),prompt:'[Chép từ tài liệu bạn có quyền sử dụng]',options:['[A]','[B]','[C]','[D]'],answer:null,explanation:''}))};
-          return send(res,200,template,{'Content-Disposition':'attachment; filename="listenlab-personal-material-template.json"'});
+          const requestedPart=url.searchParams.get('part')||'3';
+          if(!['2','3','4','general-listening'].includes(requestedPart))fail(400,'Loại mẫu phải là 2, 3, 4 hoặc general-listening.');
+          const general=requestedPart==='general-listening',part=general?requestedPart:Number(requestedPart);
+          const count=general?8:part===2?1:3,options=general?['[A]','[B]']:part===2?['[A]','[B]','[C]']:['[A]','[B]','[C]','[D]'];
+          const template={title:'[Tên bài của bạn]',part,source:{name:'[Tên nhà xuất bản/nguồn]',book:'[Tên sách hoặc tài liệu]',test:'[Bài học/test và số trang]',materialType:'licensed-book',answerLocation:'[Trang/file đáp án gốc]',rightsNote:'[Quyền sử dụng cá nhân của bạn]'},transcript:null,questions:Array.from({length:count},(_,index)=>({number:String(index+1),prompt:'[Chép từ tài liệu bạn có quyền sử dụng]',options:[...options],answer:null,explanation:''}))};
+          return send(res,200,template,{'Content-Disposition':`attachment; filename="listenlab-${general?'general-listening':'personal-material'}-template.json"`});
         }
         const assetMatch=url.pathname.match(/^\/api\/assets\/([a-zA-Z0-9_-]{1,100})$/);
         if (['GET','HEAD'].includes(req.method)&&assetMatch) {
@@ -231,7 +281,7 @@ function createApp(overrides = {}) {
       }
       const staticFiles = {
         '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'],
-        '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8']
+        '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/tutor.js': ['tutor.js','text/javascript; charset=utf-8'], '/generator.js':['generator.js','text/javascript; charset=utf-8'], '/speaking.js':['speaking.js','text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8']
       };
       const asset = staticFiles[url.pathname];
       if (asset && ['GET', 'HEAD'].includes(req.method)) {
@@ -244,13 +294,13 @@ function createApp(overrides = {}) {
       if (res.headersSent) { res.end(); return; }
       const status = error.status || error.statusCode || 500;
       if (status >= 500) console.error(`[${new Date().toISOString()}] ${req.method} ${String(req.url).split('?')[0]}: lỗi xử lý ${error.code || error.name}`);
-      send(res, status, { error: status >= 500 ? 'Server không xử lý được yêu cầu. Hãy thử lại.' : error.message });
+      send(res, status, { error: status >= 500 && !error.tutorError && !error.speakingError ? 'Server không xử lý được yêu cầu. Hãy thử lại.' : error.message, ...(error.tutorError?{providerCode:error.providerCode||null,requestId:error.requestId||null,upstreamStatus:error.upstreamStatus||null}:{}) });
     }
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   return {
-    server, store, config,
+    server, store, config, tutor, drafts, speaking,
     async listen() {
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
       if (!config.publicOrigin) config.publicOrigin = `http://${config.host === '::1' ? '[::1]' : config.host}:${server.address().port}`;
@@ -259,6 +309,9 @@ function createApp(overrides = {}) {
       return config.publicOrigin;
     },
     async close() {
+      tutor.close();
+      speaking.close();
+      await closeTranscriber();
       await new Promise((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeIdleConnections(); });
       store.close();
     }

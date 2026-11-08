@@ -39,18 +39,22 @@
   function initializeApp() {
   const $ = id => document.getElementById(id);
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const letters = ['A','B','C','D'];
+  const letters = Array.from({length:26},(_,index)=>String.fromCharCode(65+index));
   const audioPlayer = $('recording-player');
   const draftKey = 'listenlab-server-draft-v2', settingsKey = 'listenlab-audio-v2';
   let configured = true, library = [], exercise = null, unit = null, run = null, savedAttempt = null;
-  let answers = {}, playback = emptyPlayback(), submitting = false, starting = false;
+  let answers = {}, playback = emptyPlayback(), submitting = false, starting = false, deleting = false, importing = false;
   let playing = false, audioToken = 0, activePlayback = null;
   let page = 1, pages = 1;
   let timezone = 'Asia/Bangkok';
-  const sourceLabel=kind=>kind==='official'?'Nguồn chính thức':kind==='user'?'Tài liệu người dùng':'AI tự soạn / TTS';
+  const sourceLabel=kind=>kind==='general-listening-ai'?'Nghe tổng quát · AI soạn':kind==='general-listening'?'Nghe tổng quát · tài liệu gốc':kind==='official'?'Nguồn chính thức TOEIC':kind==='user'?'Tài liệu người dùng':'AI tự soạn / TTS';
+  const partLabel=part=>part==='general-listening'?'Nghe tổng quát':`TOEIC Part ${part}`;
   let settings = readLocal(settingsKey, {rate:0.9,voiceURI:''});
   if (!Number.isFinite(settings?.rate) || settings.rate < .6 || settings.rate > 1.2) settings = {rate:0.9,voiceURI:''};
   const practiceSet = createPracticeSet();
+  const tutorPanel = window.createListenLabTutor({api,post,onBusyChange:updatePracticeControls});
+  const generatorPanel = window.createListenLabGenerator({api,post,onUse:useGeneratedDraft,onBusyChange:updatePracticeControls});
+  const speakingPanel = window.createListenLabSpeaking({api,post,onBusyChange:updatePracticeControls});
 
   function emptyPlayback() { return {plays:0,replays:0,completedPlays:0,rate:0.9,voice:''}; }
   function readLocal(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; } }
@@ -60,11 +64,12 @@
   function percent(value,count) { return !count ? '—' : `${Number(value||0).toFixed(1)}%`; }
   function duration(ms) { const s=Math.max(0,Math.round(Number(ms||0)/1000));return `${Math.floor(s/60)} phút ${s%60} giây`; }
   async function api(url,options={}) {
-    const response=await fetch(url,{credentials:'same-origin',...options,headers:{...(options.body?{'Content-Type':'application/json'}:{}),...options.headers}});
-    const result=(response.headers.get('content-type')||'').includes('application/json')?await response.json():await response.text();
+    const {responseType,...fetchOptions}=options;
+    const response=await fetch(url,{credentials:'same-origin',...fetchOptions,headers:{...(options.body?{'Content-Type':'application/json'}:{}),...options.headers}});
+    const result=response.ok&&responseType==='blob'?await response.blob():(response.headers.get('content-type')||'').includes('application/json')?await response.json():await response.text();
     if(!response.ok){
-      if(response.status===401&&!url.startsWith('/api/auth/')){stopAudio();practiceSet.stop();$('app-shell').hidden=true;$('auth-section').hidden=false;configureAuth(true);}
-      throw new Error(result.error||`Yêu cầu thất bại (${response.status}).`);
+      if(response.status===401&&!url.startsWith('/api/auth/')){stopAudio();practiceSet.stop();tutorPanel.reset();speakingPanel.reset({forget:true});$('app-shell').hidden=true;$('auth-section').hidden=false;configureAuth(true);}
+      throw Object.assign(new Error(result.error||`Yêu cầu thất bại (${response.status}).`),{status:response.status});
     }return result;
   }
   function post(url,value){return api(url,{method:'POST',body:JSON.stringify(value)});}
@@ -76,6 +81,9 @@
     $('auth-submit').textContent=hasAccount?'Đăng nhập →':'Tạo tài khoản và bắt đầu →';$('auth-submit').disabled=false;
   }
   function resetPractice(){
+    tutorPanel.reset();
+    generatorPanel.reset();
+    speakingPanel.reset();
     practiceSet.reset();$('practice-workspace').hidden=false;
     stopAudio();run=null;unit=null;exercise=null;savedAttempt=null;answers={};playback=emptyPlayback();
     $('exercise').hidden=true;$('practice-empty').hidden=false;$('transcript').hidden=true;$('transcript').innerHTML='';$('answer-fields').innerHTML='';
@@ -87,13 +95,32 @@
     $('answer-form').querySelectorAll('.question-fieldset').forEach(fieldset=>{fieldset.disabled=starting||submitting||Boolean(savedAttempt);});
     updatePracticeControls();
   }
-  function updatePracticeControls(){const locked=starting||submitting||practiceSet.busy;$('start-btn').disabled=locked;$('exercise-select').disabled=locked;$('logout-btn').disabled=locked;}
+  function updatePracticeControls(){
+    const locked=starting||submitting||practiceSet.busy||deleting||importing||generatorPanel.busy||speakingPanel.busy;
+    const removable=library.find(item=>item.id===$('exercise-select').value)?.canDelete===true;
+    $('start-btn').disabled=locked;$('exercise-select').disabled=locked;$('logout-btn').disabled=locked||tutorPanel.busy;
+    $('delete-exercise-btn').hidden=!removable;$('delete-exercise-btn').disabled=locked||!removable;
+    $('import-submit').disabled=locked;
+  }
+  async function loadLibrary(preferredId){
+    library=(await api('/api/exercises')).items;
+    $('exercise-select').innerHTML=library.map(item=>`<option value="${escape(item.id)}">[${partLabel(item.part)} · ${sourceLabel(item.source?.kind)}] ${escape(item.title)}</option>`).join('');
+    $('exercise-select').value=library.some(item=>item.id===preferredId)?preferredId:library[0]?.id||'';
+    fillUnits();updatePracticeControls();
+  }
+  function useGeneratedDraft({manifest,audioFile,documents}){
+    if(starting||submitting||practiceSet.busy||deleting||importing)throw new Error('Hoàn tất thao tác bài đang làm trước khi chuyển bản nháp.');
+    const putFiles=(id,files)=>{const transfer=new DataTransfer();for(const file of files)transfer.items.add(file);$(id).files=transfer.files;};
+    putFiles('import-manifest',[new File([JSON.stringify(manifest,null,2)],'listening-draft.json',{type:'application/json'})]);
+    putFiles('import-audio',audioFile?[audioFile]:[]);putFiles('import-documents',documents||[]);
+    $('import-rights').checked=false;$('import-match').checked=false;$('import-panel').open=true;
+    $('import-status').textContent='Đã điền JSON và các file gốc. Chọn audio nếu còn thiếu; nghe/đối chiếu nội dung và xác nhận trước khi lưu.';
+    $('import-form').scrollIntoView({behavior:'smooth',block:'start'});
+  }
   async function enterApp(username){
     resetPractice();
     $('auth-section').hidden=true;$('app-shell').hidden=false;$('user-name').textContent=username;$('password').value='';$('auth-error').textContent='';notice('');
-    library=(await api('/api/exercises')).items;
-    $('exercise-select').innerHTML=library.map(item=>`<option value="${escape(item.id)}">[${sourceLabel(item.source?.kind)}] ${escape(item.title)}</option>`).join('');
-    $('exercise-select').value='official-iibc-part3-32-34';
+    await loadLibrary('official-iibc-part3-32-34');
     fillUnits();await loadProgress();showView('dashboard');
     try{
       if(await practiceSet.restore()){
@@ -124,10 +151,10 @@
     const requested=new URLSearchParams(location.search);
     if(!draft?.runId&&(requested.get('part')==='3'||requested.get('source')==='official')){showView('practice');await startUnit('official-iibc-part3-32-34','iibc-32-34');}
   }
-  function showView(name){if(name!=='practice')practiceSet.stop();['dashboard','practice','history'].forEach(item=>{$(`${item}-view`).hidden=item!==name;$(`${item}-tab`).classList.toggle('active',item===name);if(item===name)$(`${item}-tab`).setAttribute('aria-current','page');else $(`${item}-tab`).removeAttribute('aria-current');});}
-  function fillUnits(){const meta=library.find(item=>item.id===$('exercise-select').value);if(!meta)return;$('unit-select').innerHTML=meta.units.map(item=>`<option value="${escape(item.id)}">${escape(item.title)} · ${item.questionCount} câu</option>`).join('');$('start-btn').textContent=meta.audio?.kind==='external-link'?'Bắt đầu lượt mới →':`Làm lại bộ ${meta.questionCount} câu →`;$('exercise-description').textContent=`${meta.description} Phiên bản ${meta.version}. ${meta.audio?.kind==='external-link'?'Nghe và đọc tại nguồn, ghi lựa chọn ở đây.':`Toàn bộ ${meta.questionCount} câu hiện trên cùng một trang. Có thể nộp từng câu/đoạn hoặc cả bộ.`}`;}
+  function showView(name){if(name!=='practice')practiceSet.stop();if(name==='speaking'){stopAudio();practiceSet.stop();}else speakingPanel.pause();['dashboard','practice','speaking','history'].forEach(item=>{$(`${item}-view`).hidden=item!==name;$(`${item}-tab`).classList.toggle('active',item===name);if(item===name)$(`${item}-tab`).setAttribute('aria-current','page');else $(`${item}-tab`).removeAttribute('aria-current');});}
+  function fillUnits(){const meta=library.find(item=>item.id===$('exercise-select').value);if(!meta)return;$('unit-select').innerHTML=meta.units.map(item=>`<option value="${escape(item.id)}">${escape(item.title)} · ${item.questionCount} câu</option>`).join('');$('start-btn').textContent=meta.audio?.kind==='external-link'?'Bắt đầu lượt mới →':`Làm lại bộ ${meta.questionCount} câu →`;$('exercise-description').textContent=`${meta.description} Phiên bản ${meta.version}. ${meta.audio?.kind==='external-link'?'Nghe và đọc tại nguồn, ghi lựa chọn ở đây.':`Toàn bộ ${meta.questionCount} câu hiện trên cùng một trang. Có thể nộp từng câu/đoạn hoặc cả bộ.`}`;updatePracticeControls();}
   async function openSelectedPractice(fresh=false){
-    if(starting||submitting||practiceSet.busy)return;
+    if(starting||submitting||practiceSet.busy||deleting)return;
     const meta=library.find(item=>item.id===$('exercise-select').value);if(!meta)return;
     stopAudio();practiceSet.stop();
     if(meta.audio?.kind==='external-link'){practiceSet.hide();$('practice-workspace').hidden=false;return;}
@@ -157,12 +184,13 @@
     return `<fieldset class="question-fieldset" ${locked?'disabled':''}><legend>${external?escape(question.prompt):hidePrompt?`Câu ${escape(number??question.number??index+1)}: chọn hồi đáp phù hợp`:`${index+1}. ${escape(question.prompt)}`}</legend><div class="${external?'answer-grid':'text-answer-grid'}">${question.options.map((option,i)=>`<label class="answer-choice ${external?'':'text-choice'}"><input type="radio" name="question-${escape(question.id)}" value="${i}" ${selections[question.id]===i?'checked':''}><span class="choice-letter">${letters[i]}</span><span class="${external?'choice-caption':'option-text'}" ${external?'':'lang="en"'}>${external?`Lựa chọn ${letters[i]}`:escape(option)}</span></label>`).join('')}</div></fieldset>`;
   }
   function sourceHTML(source){if(!source)return '<p class="small muted">AI tự soạn · nguồn cũ</p>';return `<strong>${escape(sourceLabel(source.kind))} · ${escape(source.name)}</strong><p class="small">${escape(source.book||'')} ${escape(source.test||'')} · Loại: ${escape(source.materialType)} · Câu ${escape((source.questionNumbers||[]).join(', '))}</p>${source.url?`<a href="${escape(source.url)}" target="_blank" rel="noopener noreferrer">Trang nguồn ↗</a>`:''}${source.rights?.termsUrl?` · <a href="${escape(source.rights.termsUrl)}" target="_blank" rel="noopener noreferrer">Điều kiện sử dụng ↗</a>`:''}${(source.documents||[]).map(document=>`<p><a href="${escape(document.url)}" download>Tài liệu cá nhân: ${escape(document.name)}</a></p>`).join('')}<p class="small muted">${escape(source.rights?.decision||source.verification?.method||'')} ${source.verification?.checkedAt?`Kiểm tra: ${date(source.verification.checkedAt)}.`:''}</p>`;}
+  function tutorButton(attempt,q){if(!attempt?.id||attempt.audio?.kind==='external-link'||!q?.questionId)return '';return `<button class="button subtle" type="button" data-tutor-attempt="${escape(attempt.id)}" data-tutor-question="${escape(q.questionId)}" data-tutor-label="${escape(`${attempt.source?.name||'Bài nghe'} · ${q.prompt||'Câu '+q.questionId}`.slice(0,300))}">Hỏi gia sư AI</button>`;}
   function detailsHTML(attempt){
-    if(attempt.audio?.kind==='external-link')return `${sourceHTML(attempt.source)}<p class="notice">Audio, câu hỏi và transcript được nghe/đọc tại IIBC, không sao chép vào app. Không tạo transcript hay bản dịch thay thế. Kết quả dưới đây chấm theo key của IIBC đã đối chiếu.</p>${attempt.questions.map(q=>`<p><strong>Câu ${escape(q.number||q.questionId)}:</strong> chọn ${letters[q.selectedChoice]} · đáp án ${letters[q.correctChoice]} · ${q.correct?'đúng':'sai'}</p>`).join('')}<a href="${escape(attempt.source.transcriptUrl)}" target="_blank" rel="noopener noreferrer">Xem transcript/giải đáp tại nguồn ↗</a><p class="small muted">Số lần phát là tự báo; app không quan sát việc phát tại website khác. Đây chỉ là ba câu mẫu, không suy ra điểm TOEIC hay năng lực trên đề mới.</p>`;
-    return `<h3>Lời thoại · ${escape(attempt.audio?.kind==='tts-file'?'File WAV TTS tạo sẵn':attempt.audio?.kind==='tts'?'TTS trình duyệt (lượt cũ)':'audio')}</h3><div class="dialogue">${attempt.transcript.map(turn=>`<p lang="en">${turn.speaker?`<strong>${escape(turn.speaker)}:</strong> `:''}${escape(turn.text)}</p>${turn.translation?`<p class="translation">${escape(turn.translation)}</p>`:''}`).join('')}</div>${attempt.questions.map((q,index)=>`<div class="question-review"><h3 lang="en">${index+1}. ${escape(q.prompt)}</h3><p class="translation">${escape(q.translation)}</p><p class="small ${q.correct?'correct-text':'error-text'}">${q.correct?'✓ Đúng':'× Chưa đúng'} · Bạn chọn ${letters[q.selectedChoice]} · Đáp án ${letters[q.correctChoice]} · ${q.firstAttempt?'Lần đầu':'Làm lại'}</p><ol class="transcript-options">${q.options.map((option,i)=>`<li class="${i===q.correctChoice?'correct':i===q.selectedChoice?'wrong':''}" lang="en"><strong>${letters[i]}.</strong> ${escape(option)}${i===q.correctChoice?' ✓':''}</li>`).join('')}</ol><p class="explanation">${escape(q.explanation)}</p>${q.evidence?.length?`<div class="evidence"><strong>Dẫn chứng trong audio</strong>${q.evidence.map(item=>`<blockquote lang="en">“${escape(item.quote)}”<small>Lượt thoại ${item.turn+1}</small></blockquote>`).join('')}</div>`:''}${q.vocabulary?.length?`<div class="vocabulary">${q.vocabulary.map(entry=>`<span><strong lang="en">${escape(entry.term)}</strong>: ${escape(entry.meaning)}</span>`).join('')}</div>`:''}</div>`).join('')}`;
+    if(attempt.audio?.kind==='external-link')return `${sourceHTML(attempt.source)}<p class="notice">Audio, câu hỏi và transcript được nghe/đọc tại IIBC, không sao chép vào app. Không tạo transcript hay bản dịch thay thế. Kết quả dưới đây chấm theo key của IIBC đã đối chiếu.</p>${attempt.questions.map(q=>`<p><strong>Câu ${escape(q.number||q.questionId)}:</strong> chọn ${letters[q.selectedChoice]} · đáp án ${letters[q.correctChoice]} · ${q.correct?'đúng':'sai'}</p>${tutorButton(attempt,q)}`).join('')}<a href="${escape(attempt.source.transcriptUrl)}" target="_blank" rel="noopener noreferrer">Xem transcript/giải đáp tại nguồn ↗</a><p class="small muted">Số lần phát là tự báo; app không quan sát việc phát tại website khác. Đây chỉ là ba câu mẫu, không suy ra điểm TOEIC hay năng lực trên đề mới.</p>`;
+    return `<h3>Lời thoại · ${escape(attempt.audio?.kind==='tts-file'?'File WAV TTS tạo sẵn':attempt.audio?.kind==='tts'?'TTS trình duyệt (lượt cũ)':'audio')}</h3><div class="dialogue">${attempt.transcript.map(turn=>`<p lang="en">${turn.speaker?`<strong>${escape(turn.speaker)}:</strong> `:''}${escape(turn.text)}</p>${turn.translation?`<p class="translation">${escape(turn.translation)}</p>`:''}`).join('')}</div>${attempt.questions.map((q,index)=>`<div class="question-review"><h3 lang="en">${index+1}. ${escape(q.prompt)}</h3><p class="translation">${escape(q.translation)}</p><p class="small ${q.correct?'correct-text':'error-text'}">${q.correct?'✓ Đúng':'× Chưa đúng'} · Bạn chọn ${letters[q.selectedChoice]} · Đáp án ${letters[q.correctChoice]} · ${q.firstAttempt?'Lần đầu':'Làm lại'}</p><ol class="transcript-options">${q.options.map((option,i)=>`<li class="${i===q.correctChoice?'correct':i===q.selectedChoice?'wrong':''}" lang="en"><strong>${letters[i]}.</strong> ${escape(option)}${i===q.correctChoice?' ✓':''}</li>`).join('')}</ol><p class="explanation">${escape(q.explanation)}</p>${tutorButton(attempt,q)}${q.evidence?.length?`<div class="evidence"><strong>Dẫn chứng trong audio</strong>${q.evidence.map(item=>`<blockquote lang="en">“${escape(item.quote)}”<small>Lượt thoại ${item.turn+1}</small></blockquote>`).join('')}</div>`:''}${q.vocabulary?.length?`<div class="vocabulary">${q.vocabulary.map(entry=>`<span><strong lang="en">${escape(entry.term)}</strong>: ${escape(entry.meaning)}</span>`).join('')}</div>`:''}</div>`).join('')}`;
   }
   function renderUnit(){
-    $('practice-empty').hidden=true;$('exercise').hidden=false;$('part-label').textContent=`PART ${exercise.part} · ${sourceLabel(exercise.source?.kind)}`;
+    $('practice-empty').hidden=true;$('exercise').hidden=false;$('part-label').textContent=`${partLabel(exercise.part)} · ${sourceLabel(exercise.source?.kind)}`;
     $('source-info').innerHTML=sourceHTML(exercise.source);
     const external=exercise.audio?.kind==='external-link';$('external-panel').hidden=!external;$('audio-panel').hidden=external;
     document.querySelector('.recording-settings').hidden=external;
@@ -331,7 +359,7 @@
       }
       const total=content.units.reduce((n,u)=>n+u.questions.length,0);
       const submitBar=()=>`<div class="set-submit-bar"><p class="small muted" data-set-summary role="status"></p><button type="button" class="button dark" data-submit-set disabled>Nộp cả bộ ${total} câu →</button></div>`;
-      root.innerHTML=`<section class="card set-overview"><span class="pill">PART ${content.part} · ${escape(sourceLabel(content.source?.kind))}</span><h2>${escape(content.title)} · ${total} câu</h2><div class="source-info">${sourceHTML(content.source)}</div><p class="small muted">Làm lần lượt từ trên xuống. Mỗi câu/đoạn có audio và lựa chọn riêng; đáp án đúng, lời thoại và giải thích chỉ mở sau khi nộp. Thời gian từng câu/đoạn bắt đầu khi bạn nghe hoặc chọn đáp án.</p><div class="set-rate"><label for="set-rate" class="field-label">Tốc độ phát <output id="set-rate-value" for="set-rate">${settings.rate.toFixed(1)}×</output></label><input id="set-rate" data-set-rate type="range" min="0.6" max="1.2" step="0.1" value="${settings.rate}"></div>${submitBar()}</section><div class="set-list">${states().map(state=>{
+      root.innerHTML=`<section class="card set-overview"><span class="pill">${partLabel(content.part)} · ${escape(sourceLabel(content.source?.kind))}</span><h2>${escape(content.title)} · ${total} câu</h2><div class="source-info">${sourceHTML(content.source)}</div><p class="small muted">Làm lần lượt từ trên xuống. Mỗi câu/đoạn có audio và lựa chọn riêng; đáp án đúng, lời thoại và giải thích chỉ mở sau khi nộp. Thời gian từng câu/đoạn bắt đầu khi bạn nghe hoặc chọn đáp án.</p><div class="set-rate"><label for="set-rate" class="field-label">Tốc độ phát <output id="set-rate-value" for="set-rate">${settings.rate.toFixed(1)}×</output></label><input id="set-rate" data-set-rate type="range" min="0.6" max="1.2" step="0.1" value="${settings.rate}"></div>${submitBar()}</section><div class="set-list">${states().map(state=>{
         const audio=state.unit.audio,roles=(audio?.roles||[]).map(role=>`${role.speaker}: ${shortVoice(role.voice)}`).join(' · ');
         return `<article class="card set-unit" data-unit-id="${escape(state.unit.id)}" aria-labelledby="set-unit-${state.index}"><div class="card-top"><h3 id="set-unit-${state.index}">${escape(state.unit.title)}</h3><span class="pill">${state.unit.questions.length} CÂU</span></div><p class="small muted" data-unit-note></p><p class="small muted">${escape(state.unit.context||'')}</p><div class="set-audio"><audio class="set-player" preload="none" ${audio?.ready?`src="${escape(audio.url)}"`:''}></audio><p class="small" data-audio-status role="status"></p>${content.part===3&&roles?`<p class="small muted">Giọng TTS · ${escape(roles)}</p>`:''}<div class="set-audio-actions"><button class="button primary" type="button" data-play>▶ Phát audio</button><button class="button subtle" type="button" data-replay disabled>↻ Nghe lại</button><button class="button icon-button" type="button" data-stop disabled aria-label="Dừng phát">■</button>${audio?.ready?`<a class="small muted" href="${escape(audio.url)}" download>Tải audio</a>`:''}</div><div class="set-timeline"><progress max="100" value="0" aria-label="Tiến độ audio ${state.index+1}"></progress><span data-audio-time></span></div><p class="small muted" data-listen-count></p></div><form data-unit-form>${state.unit.questions.map((q,index)=>questionHTML(q,index,content,state.answers,Boolean(state.attempt),content.part===2?state.index+1:undefined)).join('')}<div class="submit-row"><span class="small muted">${content.part===2?'Chọn một hồi đáp.':'Chọn đủ các đáp án cho đoạn nghe.'}</span><button class="button dark" type="submit" data-submit-unit>Nộp và lưu →</button></div></form><p class="small error-text" data-unit-error role="alert"></p><div class="feedback" data-unit-feedback hidden role="status"></div><section class="transcript" data-unit-result hidden aria-label="Lời thoại, đáp án và giải thích"></section></article>`;
       }).join('')}</div><section class="card set-bottom">${submitBar()}</section>`;
@@ -381,26 +409,31 @@
       hide(){stop();root.hidden=true;save();},
       show(){root.hidden=false;if($('set-rate')){$('set-rate').value=settings.rate;$('set-rate-value').textContent=`${settings.rate.toFixed(1)}×`;}save();},
       reset(){stop();banks.clear();current=null;root.hidden=true;root.innerHTML='';},
+      forget(exerciseId){
+        if(current?.content.id===exerciseId){stop();current=null;root.hidden=true;root.replaceChildren();}
+        banks.delete(exerciseId);
+        try{if(JSON.parse(sessionStorage.getItem(key))?.exerciseId===exerciseId)sessionStorage.removeItem(key);}catch{}
+      },
       clearDraft(){try{sessionStorage.removeItem(key);}catch{}}
     };
   }
   async function loadProgress(){
     const progress=await api(`/api/progress?category=${$('progress-source').value}`),o=progress.overall;timezone=progress.timezone||'Asia/Bangkok';
-    $('source-counts').textContent=`Đang xem: ${sourceLabel(progress.category)}. Câu gặp lần đầu: chính thức ${progress.bySource.official.firstAnswered} · sách cá nhân ${progress.bySource.user.firstAnswered} · AI/TTS ${progress.bySource.ai.firstAnswered}.`;
+    $('source-counts').textContent=`Đang xem: ${sourceLabel(progress.category)}. Câu TOEIC lần đầu: chính thức ${progress.bySource.official.firstAnswered} · tài liệu cá nhân ${progress.bySource.user.firstAnswered} · AI/TTS ${progress.bySource.ai.firstAnswered}. Nghe tổng quát riêng: tài liệu gốc ${progress.byLearningType['general-listening'].firstAnswered} · AI soạn ${progress.byLearningType['general-listening-ai'].firstAnswered} câu lần đầu.`;
     $('first-accuracy').textContent=percent(o.firstAccuracy,o.firstAnswered);$('first-count').textContent=`${o.firstCorrect||0}/${o.firstAnswered||0} câu ở lần đầu`;$('overall-accuracy').textContent=percent(o.accuracy,o.answered);$('overall-count').textContent=`${o.correct||0}/${o.answered||0} lượt trả lời, gồm làm lại`;$('attempt-count').textContent=o.attempts||0;
-    $('part-stats').innerHTML=`<div class="table-scroll"><table><thead><tr><th>Part</th><th>Lần đầu</th><th>Tất cả</th></tr></thead><tbody>${progress.byPart.map(p=>`<tr><td>Part ${p.part}</td><td><strong>${percent(p.firstAccuracy,p.firstAnswered)}</strong><small>${p.firstCorrect||0}/${p.firstAnswered||0} câu</small></td><td>${percent(p.accuracy,p.answered)}<small>${p.correct||0}/${p.answered||0} lượt trả lời</small></td></tr>`).join('')}</tbody></table></div>`;
+    $('part-stats').innerHTML=`<div class="table-scroll"><table><thead><tr><th>Loại bài</th><th>Lần đầu</th><th>Tất cả</th></tr></thead><tbody>${progress.byPart.map(p=>`<tr><td>${partLabel(p.part)}</td><td><strong>${percent(p.firstAccuracy,p.firstAnswered)}</strong><small>${p.firstCorrect||0}/${p.firstAnswered||0} câu</small></td><td>${percent(p.accuracy,p.answered)}<small>${p.correct||0}/${p.answered||0} lượt trả lời</small></td></tr>`).join('')}</tbody></table></div>`;
     $('daily-trend').innerHTML=progress.daily.length?`<div class="trend-list">${progress.daily.slice(0,14).reverse().map(d=>`<div class="trend-row"><span>${escape(d.date)}</span><progress max="100" value="${Number(d.firstAccuracy||0)}" aria-label="Lần đầu ngày ${escape(d.date)}"></progress><strong>${percent(d.firstAccuracy,d.firstAnswered)}</strong><small>${d.firstAnswered||0} câu mới · ${d.answered||0} lượt trả lời</small></div>`).join('')}</div><p class="small muted">14 ngày có dữ liệu gần nhất. Thanh là lần đầu; “—” là ngày chỉ làm lại.</p>`:'<p class="empty-history">Chưa có lượt làm. Bắt đầu một câu để tạo mốc đầu tiên.</p>';
-    $('review-list').innerHTML=progress.review.length?progress.review.map(item=>`<div class="review-item"><span class="pill">PART ${item.part} · ${escape(item.skill)}</span><p lang="en">${escape(item.prompt)}</p><span class="small ${item.latestCorrect?'correct-text':'error-text'}">${item.wrongCount} lần sai · ${item.latestCorrect?'lượt gần nhất đã đúng':'cần ôn lại'}</span></div>`).join(''):'<p class="small muted">Chưa có câu cần ôn được ghi nhận.</p>';$('limitations').textContent=(progress.limitations||[]).join(' ');
+    $('review-list').innerHTML=progress.review.length?progress.review.map(item=>`<div class="review-item"><span class="pill">${partLabel(item.part)} · ${escape(item.skill)}</span><p lang="en">${escape(item.prompt)}</p><span class="small ${item.latestCorrect?'correct-text':'error-text'}">${item.wrongCount} lần sai · ${item.latestCorrect?'lượt gần nhất đã đúng':'cần ôn lại'}</span></div>`).join(''):'<p class="small muted">Chưa có câu cần ôn được ghi nhận.</p>';$('limitations').textContent=(progress.limitations||[]).join(' ');
   }
   async function loadHistory(){
     const query=new URLSearchParams({page:String(page),pageSize:'10'});if($('from-date').value)query.set('from',$('from-date').value);if($('to-date').value)query.set('to',$('to-date').value);if($('part-filter').value)query.set('part',$('part-filter').value);
     const result=await api(`/api/attempts?${query}`);pages=result.pages||1;
-    $('history-list').innerHTML=result.items.length?result.items.map(item=>`<button class="history-button" type="button" data-attempt-id="${escape(item.id)}"><span><strong>Part ${item.part} · ${escape(item.unitTitle||item.exerciseTitle)}</strong><small>${date(item.submittedAt)} · v${escape(item.version)} · ${item.attemptKind==='first'?'Lần đầu':item.attemptKind==='retry'?'Làm lại':'Kết hợp'} · ${duration(item.durationMs)}</small><small>${item.playback?.plays||0} lượt phát / ${item.playback?.replays||0} nghe lại</small></span><strong>${item.correct}/${item.total} →</strong></button>`).join(''):'<p class="empty-history">Không có lượt làm trong bộ lọc này.</p>';
+    $('history-list').innerHTML=result.items.length?result.items.map(item=>`<button class="history-button" type="button" data-attempt-id="${escape(item.id)}"><span><strong>${partLabel(item.part)} · ${escape(item.unitTitle||item.exerciseTitle)}</strong><small>${date(item.submittedAt)} · v${escape(item.version)} · ${item.attemptKind==='first'?'Lần đầu':item.attemptKind==='retry'?'Làm lại':'Kết hợp'} · ${duration(item.durationMs)}</small><small>${item.playback?.plays||0} lượt phát / ${item.playback?.replays||0} nghe lại</small></span><strong>${item.correct}/${item.total} →</strong></button>`).join(''):'<p class="empty-history">Không có lượt làm trong bộ lọc này.</p>';
     $('page-info').textContent=`Trang ${page}/${pages} · ${result.total} lượt`;$('prev-page').disabled=page<=1;$('next-page').disabled=page>=pages;
   }
   function download(format){const link=document.createElement('a');link.href=`/api/report?format=${format}&download=1`;link.download=`listenlab-report.${format==='json'?'json':'md'}`;document.body.append(link);link.click();link.remove();}
   $('auth-form').addEventListener('submit',async event=>{event.preventDefault();$('auth-submit').disabled=true;$('auth-error').textContent='';try{const result=await post(configured?'/api/auth/login':'/api/auth/setup',{username:$('username').value,password:$('password').value});await enterApp(result.username);}catch(error){$('auth-error').textContent=error.message;}finally{$('auth-submit').disabled=false;}});
-  $('logout-btn').addEventListener('click',async()=>{if(starting||submitting||practiceSet.busy)return;try{await post('/api/auth/logout',{});clearDraft();practiceSet.clearDraft();resetPractice();$('app-shell').hidden=true;$('auth-section').hidden=false;configureAuth(true);}catch(error){notice(error.message,true);}});
+  $('logout-btn').addEventListener('click',async()=>{if(starting||submitting||practiceSet.busy||tutorPanel.busy||speakingPanel.busy)return;try{await post('/api/auth/logout',{});speakingPanel.reset({forget:true});clearDraft();practiceSet.clearDraft();resetPractice();$('app-shell').hidden=true;$('auth-section').hidden=false;configureAuth(true);}catch(error){notice(error.message,true);}});
   $('exercise-select').addEventListener('change',()=>{fillUnits();void openSelectedPractice();});
   $('start-btn').addEventListener('click',()=>{const meta=library.find(item=>item.id===$('exercise-select').value);if(meta?.audio?.kind==='external-link')void startUnit(meta.id,meta.units[0].id);else void openSelectedPractice(true);});
   $('answer-form').addEventListener('change',event=>{if(savedAttempt||submitting||starting)return;const input=event.target;if(input.matches('input[type=radio]')){answers[input.name.slice('question-'.length)]=Number(input.value);$('submit-btn').disabled=!allAnswered();saveDraft();}});
@@ -411,31 +444,54 @@
     finally{submitting=false;$('start-btn').disabled=false;refreshLocks();}
   });
   $('next-btn').addEventListener('click',async()=>{if(!savedAttempt||starting||submitting)return;const index=exercise.units.findIndex(item=>item.id===unit.id);if(index===exercise.units.length-1){stopAudio();clearDraft();showView('dashboard');try{await loadProgress();}catch(error){notice(error.message,true);}}else await startUnit(exercise.id,exercise.units[index+1].id);});
-  ['dashboard','practice','history'].forEach(name=>$(`${name}-tab`).addEventListener('click',async()=>{showView(name);try{if(name==='practice')await openSelectedPractice();if(name==='dashboard')await loadProgress();if(name==='history'){page=1;await loadHistory();}}catch(error){notice(error.message,true);}}));
+  ['dashboard','practice','speaking','history'].forEach(name=>$(`${name}-tab`).addEventListener('click',async()=>{showView(name);try{if(name==='speaking')await speakingPanel.open();if(name==='practice')await openSelectedPractice();if(name==='dashboard')await loadProgress();if(name==='history'){page=1;await loadHistory();}}catch(error){notice(error.message,true);}}));
   $('go-practice-btn').addEventListener('click',()=>{showView('practice');void openSelectedPractice();});
   $('history-filter').addEventListener('submit',async event=>{event.preventDefault();page=1;try{await loadHistory();}catch(error){notice(error.message,true);}});
   $('prev-page').addEventListener('click',async()=>{if(page>1){page--;try{await loadHistory();}catch(error){notice(error.message,true);}}});$('next-page').addEventListener('click',async()=>{if(page<pages){page++;try{await loadHistory();}catch(error){notice(error.message,true);}}});
-  $('history-list').addEventListener('click',async event=>{const button=event.target.closest('[data-attempt-id]');if(!button)return;try{const a=await api(`/api/attempts/${button.dataset.attemptId}`);$('attempt-detail').hidden=false;$('attempt-detail').innerHTML=`<h2>Part ${a.part} · ${escape(a.unitTitle)}</h2><p class="small muted">${date(a.submittedAt)} · phiên bản ${escape(a.version)} · ${duration(a.durationMs)} · đúng ${a.correct}/${a.total}</p>${detailsHTML(a)}`;$('attempt-detail').scrollIntoView({behavior:'smooth',block:'start'});}catch(error){notice(error.message,true);}});
+  $('history-list').addEventListener('click',async event=>{const button=event.target.closest('[data-attempt-id]');if(!button)return;try{const a=await api(`/api/attempts/${button.dataset.attemptId}`);$('attempt-detail').hidden=false;$('attempt-detail').innerHTML=`<h2>${partLabel(a.part)} · ${escape(a.unitTitle)}</h2><p class="small muted">${date(a.submittedAt)} · phiên bản ${escape(a.version)} · ${duration(a.durationMs)} · đúng ${a.correct}/${a.total}</p>${detailsHTML(a)}`;$('attempt-detail').scrollIntoView({behavior:'smooth',block:'start'});}catch(error){notice(error.message,true);}});
   $('play-btn').addEventListener('click',play);$('replay-btn').addEventListener('click',play);$('stop-btn').addEventListener('click',()=>stopAudio());
   $('rate').value=settings.rate;$('rate-value').textContent=`${settings.rate.toFixed(1)}×`;$('rate').addEventListener('input',()=>{settings.rate=Number($('rate').value);$('rate-value').textContent=`${settings.rate.toFixed(1)}×`;writeLocal(settingsKey,settings);});
   $('download-md').addEventListener('click',()=>download('markdown'));$('download-json').addEventListener('click',()=>download('json'));
   $('external-confirm').addEventListener('change',refreshLocks);
   $('progress-source').addEventListener('change',()=>loadProgress().catch(error=>notice(error.message,true)));
   $('import-form').addEventListener('submit',async event=>{
-    event.preventDefault();$('import-submit').disabled=true;$('import-status').textContent='Đang nhập tài liệu riêng tư…';
+    event.preventDefault();if(starting||submitting||practiceSet.busy||deleting||importing)return;
+    importing=true;updatePracticeControls();$('import-status').textContent='Đang nhập tài liệu riêng tư…';
     try{
       const manifestFile=$('import-manifest').files[0],audioFile=$('import-audio').files[0],documents=Array.from($('import-documents').files);
       if(!manifestFile||!audioFile||audioFile.size>20*1024*1024||documents.length>2||documents.some(file=>file.size>5*1024*1024))throw new Error('Kiểm tra giới hạn audio 20 MB và tối đa hai tài liệu 5 MB.');
       const encode=file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({name:file.name,base64:String(reader.result).split(',')[1]});reader.onerror=()=>reject(new Error('Không đọc được file.'));reader.readAsDataURL(file);});
       const created=await post('/api/materials',{manifest:JSON.parse(await manifestFile.text()),audio:await encode(audioFile),documents:await Promise.all(documents.map(encode)),rightsConfirmed:$('import-rights').checked,matchConfirmed:$('import-match').checked});
-      library=(await api('/api/exercises')).items;$('exercise-select').innerHTML=library.map(item=>`<option value="${escape(item.id)}">[${sourceLabel(item.source?.kind)}] ${escape(item.title)}</option>`).join('');$('exercise-select').value=created.id;fillUnits();await openSelectedPractice();$('import-status').textContent='Đã lưu audio/đề/key riêng tư và mở toàn bộ bài bên dưới. Nguồn này được thống kê riêng, không tự gắn nhãn chính thức.';
-    }catch(error){$('import-status').textContent=`Chưa nhập: ${error.message}`;}finally{$('import-submit').disabled=false;}
+      await loadLibrary(created.id);await openSelectedPractice();
+      $('import-status').textContent=created.importStatus==='existing'?'Bài này đã có trong thư viện. Đã mở bản có sẵn, không tạo thêm bản trùng.':created.importStatus==='restored'?'Đã khôi phục bài từng xóa khỏi thư viện. Lịch sử trước đây vẫn được giữ.':'Đã lưu audio/đề/key riêng tư và mở toàn bộ bài bên dưới. Nguồn này được thống kê riêng, không tự gắn nhãn chính thức.';
+    }catch(error){$('import-status').textContent=`Chưa nhập: ${error.message}`;}finally{importing=false;updatePracticeControls();}
+  });
+  $('delete-exercise-btn').addEventListener('click',async()=>{
+    if(starting||submitting||practiceSet.busy||deleting||importing)return;
+    const index=library.findIndex(item=>item.id===$('exercise-select').value),selected=library[index];
+    if(!selected?.canDelete||!window.confirm(`Xóa “${selected.title}” khỏi thư viện?\n\nLịch sử và kết quả đã nộp vẫn được giữ. Bản nháp chưa nộp của bài này sẽ bị bỏ.`))return;
+    const nextId=library[index+1]?.id||library[index-1]?.id;
+    deleting=true;updatePracticeControls();let removed=false;
+    try{
+      await api(`/api/materials/${encodeURIComponent(selected.id)}`,{method:'DELETE'});removed=true;
+      practiceSet.forget(selected.id);
+      try{if(JSON.parse(sessionStorage.getItem(draftKey))?.exerciseId===selected.id)clearDraft();}catch{}
+      await loadLibrary(nextId);deleting=false;await openSelectedPractice();
+      notice('Đã xóa bài khỏi thư viện. Lịch sử, điểm và kết quả đã làm vẫn được giữ.');
+    }catch(error){notice(`${removed?'Đã xóa bài nhưng chưa tải lại được danh sách. Hãy tải lại trang.':'Chưa xác nhận xóa bài.'} ${error.message}`,true);}
+    finally{deleting=false;updatePracticeControls();}
   });
   $('copy-report-btn').addEventListener('click',async()=>{try{const report=await api('/api/report?format=markdown');$('report-text').value=report;try{if(!navigator.clipboard?.writeText)throw new Error();await navigator.clipboard.writeText(report);$('copy-status').textContent='Đã sao chép. Dán vào ChatGPT để giáo viên AI nhận xét.';}catch{$('report-details').hidden=false;$('report-details').open=true;$('report-text').focus();$('report-text').select();$('copy-status').textContent='Nội dung đã được chọn. Nhấn Ctrl+C rồi dán vào chat.';}}catch(error){notice(error.message,true);}});
   window.addEventListener('pagehide',()=>{stopAudio();practiceSet.stop();practiceSet.save();if(run)saveDraft();});
   updateAudioButtons();
   if(location.protocol==='file:'){configureAuth(true);$('auth-submit').disabled=true;notice('Bản có backend cần chạy npm start rồi mở http://127.0.0.1:4173. Không mở trực tiếp index.html.',true);return;}
-  api('/api/auth/status').then(async status=>{configureAuth(status.configured);if(status.authenticated)await enterApp(status.username);}).catch(error=>notice(`Không kết nối được backend: ${error.message}`,true));
+  api('/health').then(health=>{
+    if(!Array.isArray(health?.features)||!['general-listening','ai-tutor','material-drafts','speaking'].every(feature=>health.features.includes(feature))){
+      $('auth-title').textContent='Cần khởi động lại server.';
+      throw new Error('Server đang chạy bản cũ. Trong terminal chạy web, nhấn Ctrl+C rồi chạy npm run dev, sau đó tải lại trang bằng Ctrl+F5.');
+    }
+    return api('/api/auth/status');
+  }).then(async status=>{configureAuth(status.configured);if(status.authenticated){await enterApp(status.username);}}).catch(error=>notice(`Chưa mở được ứng dụng: ${error.message}`,true));
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp, { once: true });

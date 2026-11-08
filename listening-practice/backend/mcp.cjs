@@ -133,12 +133,12 @@ function makeTools(scope) {
   return [
     {
       ...base, name: 'get_learning_progress', title: 'Read learning progress',
-      description: 'Read actual personal TOEIC-style practice results, first-attempt accuracy, Part/day breakdowns and review needs. Authored exercises do not imply an official TOEIC score.',
+      description: 'Read actual listening results, first-attempt accuracy, day breakdowns and review needs. General listening is reported separately from TOEIC, with original-source and AI-authored questions in separate groups. Results do not imply an official TOEIC score.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false }
     },
     {
       ...base, name: 'list_attempts', title: 'List practice attempts',
-      description: 'Read saved practice attempts, paginated and optionally filtered by inclusive local dates (Asia/Bangkok) and Part. Includes retries without replacing older attempts.',
+      description: 'Read saved practice attempts, paginated and filtered by inclusive local dates (Asia/Bangkok), TOEIC Part or general-listening. Includes retries without replacing older attempts.',
       inputSchema: {
         type: 'object', additionalProperties: false,
         properties: {
@@ -146,7 +146,7 @@ function makeTools(scope) {
           pageSize: { type: 'integer', minimum: 1, maximum: 100, default: 10 },
           from: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Inclusive date YYYY-MM-DD.' },
           to: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Inclusive date YYYY-MM-DD.' },
-          part: { type: 'integer', enum: [2, 3, 4] }
+          part: { type: ['integer','string'], enum: [2, 3, 4, 'general-listening'], description: 'TOEIC Part 2/3/4, or general-listening for non-TOEIC materials.' }
         }
       }
     },
@@ -166,7 +166,7 @@ function validateArguments(name, args) {
   if (name === 'list_attempts') {
     if (args.page !== undefined && (!Number.isSafeInteger(args.page) || args.page < 1 || args.page > 1000000)) return 'page must be an integer between 1 and 1000000.';
     if (args.pageSize !== undefined && (!Number.isInteger(args.pageSize) || args.pageSize < 1 || args.pageSize > 100)) return 'pageSize must be between 1 and 100.';
-    if (args.part !== undefined && ![2, 3, 4].includes(args.part)) return 'part must be 2, 3 or 4.';
+    if (args.part !== undefined && ![2, 3, 4, 'general-listening'].includes(args.part)) return 'part must be 2, 3, 4 or general-listening.';
     for (const key of ['from', 'to']) {
       if (args[key] !== undefined && (typeof args[key] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(args[key]) || new Date(`${args[key]}T00:00:00.000Z`).toISOString().slice(0, 10) !== args[key])) return `${key} must be a real date in YYYY-MM-DD form.`;
     }
@@ -284,7 +284,7 @@ function createMcpHandler({ store, config, fetchImpl = globalThis.fetch }) {
         protocolVersion: PROTOCOLS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOLS[0],
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'listenlab-readonly', version: '1.0.0', title: 'Listen Lab learning progress' },
-        instructions: 'Only read learning data. These are authored exercises with TTS audio, not official ETS tests. Compare first attempts separately from retries and consider listening counts, duration and small samples. Submitting practice results does not send a chat message.'
+        instructions: 'Only read learning data. Keep TOEIC, general listening and source groups separate. Materials can be official samples, user-supplied recordings or authored TTS: inspect each source. Do not convert these results to an official TOEIC score. Compare first attempts separately from retries and consider listening counts, duration and small samples. Submitting practice results does not send a chat message.'
       };
     } else if (message.method === 'ping') result = {};
     else if (message.method === 'tools/list') {
@@ -298,7 +298,7 @@ function createMcpHandler({ store, config, fetchImpl = globalThis.fetch }) {
       if (invalid) { rpcError(res, 200, message.id, -32602, invalid); return true; }
       try {
         let data;
-        if (params.name === 'get_learning_progress') data = store.getProgress(userId);
+        if (params.name === 'get_learning_progress') data = {...store.getProgress(userId),generalListening:store.getProgress(userId,{category:'general-listening'}),generalListeningAI:store.getProgress(userId,{category:'general-listening-ai'})};
         else if (params.name === 'list_attempts') data = store.listAttempts(userId, args);
         else data = store.getAttempt(userId, args.id);
         if (data === null || data === undefined) result = { isError: true, content: [{ type: 'text', text: 'Attempt not found for this user.' }] };

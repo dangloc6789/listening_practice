@@ -3,6 +3,13 @@ const crypto=require('node:crypto');
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
 function fail(message,status=400){throw Object.assign(new Error(message),{status,statusCode:status});}
 function text(value,name,max=500){if(typeof value!=='string'||!value.trim()||value.length>max)fail(`Thiếu hoặc sai ${name}.`);return value.trim();}
+function fingerprint(exercise){
+  const source=exercise.source||{};
+  return hash(JSON.stringify({part:exercise.part,title:exercise.title,audio:exercise.audio?.sha256,
+    source:{name:source.name,book:source.book,test:source.test,url:source.url,answerLocation:source.answerLocation,materialType:source.materialType,rightsNote:source.rights?.note},
+    documents:(source.documents||[]).map(file=>file.sha256).sort(),
+    units:exercise.units.map(unit=>({transcript:unit.transcript,questions:unit.questions.map(q=>({number:q.number,prompt:q.prompt,options:q.options,answer:q.answer,explanation:q.explanation,translation:q.translation}))}))}));
+}
 function assetInput(input,audio=false){
   if(!input||typeof input.base64!=='string'||input.base64.length>(audio?28000000:7000000)||input.base64.length%4!==0||!/^[A-Za-z0-9+/]*={0,2}$/.test(input.base64))fail('File quá lớn hoặc base64 không hợp lệ. Audio tối đa 20 MB, mỗi tài liệu 5 MB.');
   const bytes=Buffer.from(input.base64,'base64');if(bytes.length<10||bytes.length>(audio?20:5)*1024*1024)fail('File trống hoặc quá lớn.');
@@ -19,40 +26,75 @@ function assetInput(input,audio=false){
   return {id:crypto.randomUUID(),name:text(input.name,'tên file',150).replace(/[\r\n"\\/]/g,'_'),mime,bytes,sha256:hash(bytes)};
 }
 class MaterialLibrary{
-  constructor(db){this.db=db;db.exec(`CREATE TABLE IF NOT EXISTS personal_materials(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),exercise_json TEXT NOT NULL,created_at TEXT NOT NULL);CREATE TABLE IF NOT EXISTS personal_assets(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),name TEXT NOT NULL,mime TEXT NOT NULL,sha256 TEXT NOT NULL,bytes BLOB NOT NULL);`);}
-  list(userId){return this.db.prepare('SELECT exercise_json FROM personal_materials WHERE user_id=? ORDER BY created_at DESC').all(userId).map(row=>JSON.parse(row.exercise_json));}
-  find(userId,id){const row=this.db.prepare('SELECT exercise_json FROM personal_materials WHERE id=? AND user_id=?').get(id,userId);return row?JSON.parse(row.exercise_json):null;}
+  constructor(db){
+    this.db=db;db.exec(`CREATE TABLE IF NOT EXISTS personal_materials(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),exercise_json TEXT NOT NULL,created_at TEXT NOT NULL);CREATE TABLE IF NOT EXISTS personal_assets(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),name TEXT NOT NULL,mime TEXT NOT NULL,sha256 TEXT NOT NULL,bytes BLOB NOT NULL);`);
+    const columns=new Set(db.prepare('PRAGMA table_info(personal_materials)').all().map(column=>column.name));
+    if(!columns.has('deleted_at'))db.exec('ALTER TABLE personal_materials ADD COLUMN deleted_at TEXT');
+    if(!columns.has('fingerprint'))db.exec('ALTER TABLE personal_materials ADD COLUMN fingerprint TEXT');
+    db.exec('CREATE INDEX IF NOT EXISTS personal_materials_fingerprint ON personal_materials(user_id,fingerprint)');
+  }
+  list(userId){return this.db.prepare('SELECT exercise_json FROM personal_materials WHERE user_id=? AND deleted_at IS NULL ORDER BY created_at DESC').all(userId).map(row=>JSON.parse(row.exercise_json));}
+  find(userId,id){const row=this.db.prepare('SELECT exercise_json FROM personal_materials WHERE id=? AND user_id=? AND deleted_at IS NULL').get(id,userId);return row?JSON.parse(row.exercise_json):null;}
+  remove(userId,id){
+    const row=this.db.prepare('SELECT id FROM personal_materials WHERE id=? AND user_id=?').get(id,userId);
+    if(!row)fail('Không tìm thấy bài tự nhập thuộc tài khoản này.',404);
+    this.db.prepare('UPDATE personal_materials SET deleted_at=COALESCE(deleted_at,?) WHERE id=? AND user_id=?').run(new Date().toISOString(),id,userId);
+    return {id,deleted:true,historyPreserved:true};
+  }
   asset(userId,id){return this.db.prepare('SELECT * FROM personal_assets WHERE id=? AND user_id=?').get(id,userId)||null;}
   import(userId,input){
     const manifest=input?.manifest;
     if(!manifest||input.rightsConfirmed!==true||input.matchConfirmed!==true)fail('Cần xác nhận quyền sử dụng cá nhân và đã đối chiếu audio/đề/key cùng bài.');
     const title=text(manifest.title,'tên bài',180),part=manifest.part;
-    if(![2,3,4].includes(part))fail('Part phải là 2, 3 hoặc 4.');
+    const general=part==='general-listening';
+    if(!general&&![2,3,4].includes(part))fail('Part phải là 2, 3, 4 hoặc general-listening.');
     const provided=manifest.source||{};
     const name=text(provided.name,'tên nguồn'),book=text(provided.book,'tên sách/tài liệu'),test=text(provided.test,'test và trang/câu'),answerLocation=text(provided.answerLocation,'vị trí đáp án gốc');
-    if(!['licensed-book','user-owned-material'].includes(provided.materialType))fail('Loại học liệu phải là licensed-book hoặc user-owned-material.');
+    if(!['licensed-book','user-owned-material','ai-generated-exercise'].includes(provided.materialType))fail('Loại học liệu phải là licensed-book, user-owned-material hoặc ai-generated-exercise.');
+    const ai=provided.materialType==='ai-generated-exercise'||manifest.generatedByAI===true||manifest.generation?.mode==='compose';
     let url=null;if(provided.url){let parsed;try{parsed=new URL(provided.url);}catch{fail('URL nguồn không hợp lệ.');}if(!['https:','http:'].includes(parsed.protocol)||parsed.username||parsed.password||parsed.search)fail('URL nguồn phải là http(s), không chứa secret/query.');url=parsed.href;}
     if(input.documents!==undefined&&(!Array.isArray(input.documents)||input.documents.length>2))fail('Tối đa hai tài liệu đính kèm.');
     const audio=assetInput(input.audio,true),documents=(input.documents||[]).map(document=>assetInput(document));
     const expected=part===2?1:3,questions=manifest.questions;
-    if(!Array.isArray(questions)||questions.length!==expected)fail(`Part ${part} cần ${expected} câu cho một đoạn audio.`);
+    if(!Array.isArray(questions))fail('questions phải là danh sách câu hỏi.');
+    if(general){if(questions.length<1||questions.length>100)fail('general-listening cần từ 1 đến 100 câu cho một audio.');}
+    else if(questions.length!==expected)fail(`Part ${part} cần ${expected} câu cho một đoạn audio.`);
     const seen=new Set();
     const normalized=questions.map((question,index)=>{
       const number=text(String(question.number||''),'số câu',40);if(seen.has(number))fail('Trùng số câu.');seen.add(number);
-      if(!Array.isArray(question.options)||question.options.length!==(part===2?3:4))fail('Sai số lựa chọn.');
-      const answer=typeof question.answer==='string'?'ABCD'.indexOf(question.answer.toUpperCase()):-1;if(answer<0||answer>=question.options.length)fail('Thiếu đáp án gốc. Không tự suy đoán đáp án; điền A/B/C/D từ tài liệu.');
-      return {id:`user-q-${index+1}`,number,materialKey:`user-audio:${audio.sha256}:question:${number}`,prompt:text(question.prompt,'nội dung câu hỏi',3000),options:question.options.map(value=>text(value,'lựa chọn',1500)),answer,
+      if(!Array.isArray(question.options)||(general?(question.options.length<2||question.options.length>26):question.options.length!==(part===2?3:4)))fail(general?'Mỗi câu general-listening cần từ 2 đến 26 lựa chọn.':'Sai số lựa chọn.');
+      const answer=Number.isInteger(question.answer)?question.answer:typeof question.answer==='string'&&/^[A-Z]$/i.test(question.answer)?question.answer.toUpperCase().charCodeAt(0)-65:-1;
+      if(answer<0||answer>=question.options.length)fail('Thiếu hoặc sai đáp án gốc. Dùng chữ cái A–Z hoặc chỉ số nguyên bắt đầu từ 0; app không tự suy đoán đáp án.');
+      return {id:`user-q-${index+1}`,number,materialKey:`user-audio:${audio.sha256}:${general?'general-listening:':''}question:${number}`,prompt:text(question.prompt,'nội dung câu hỏi',3000),options:question.options.map(value=>text(value,'lựa chọn',1500)),answer,
         explanation:typeof question.explanation==='string'?question.explanation.slice(0,6000):`Đối chiếu đáp án do bạn cung cấp tại: ${answerLocation}. Chưa có giải thích trong tài liệu nhập.`,translation:typeof question.translation==='string'?question.translation.slice(0,6000):null,vocabulary:[],evidence:[],topic:'Tài liệu cá nhân',skill:'Theo tài liệu cung cấp',answerSource:answerLocation};
     });
-    const transcript=manifest.transcript==null?[]:manifest.transcript;
-    if(!Array.isArray(transcript)||transcript.length>100)fail('Transcript phải là danh sách lượt thoại, hoặc bỏ trống nếu nguồn không có.');
+    const transcript=manifest.transcript==null?[]:typeof manifest.transcript==='string'?[{speaker:'',text:manifest.transcript}]:manifest.transcript;
+    if(!Array.isArray(transcript)||transcript.length>100)fail('Transcript phải là văn bản hoặc danh sách tối đa 100 lượt thoại, hoặc bỏ trống nếu nguồn không có.');
     const turns=transcript.map(turn=>({speaker:typeof turn.speaker==='string'?turn.speaker.slice(0,80):'',text:text(turn.text,'transcript gốc',12000),...(typeof turn.translation==='string'?{translation:turn.translation.slice(0,12000)}:{})}));
+    if(ai)for(const [index,question] of normalized.entries())question.materialKey=`ai-personal-audio:${audio.sha256}:${part}:question:${index+1}`;
+    if(ai)for(const [index,question] of normalized.entries()){
+      const quote=typeof questions[index].answerEvidence==='string'?questions[index].answerEvidence.trim().slice(0,6000):'';
+      const turn=quote?turns.findIndex(item=>item.text.includes(quote)):-1;
+      if(turn>=0)question.evidence=[{turn,quote}];
+    }
     const id=`personal-${crypto.randomUUID()}`;
-    const source={id:`personal-source:${audio.sha256}`,name,book,test,url,answerLocation,kind:'user',materialType:provided.materialType,questionNumbers:normalized.map(q=>q.number),questionCount:normalized.length,rights:{mode:'personal-upload',confirmedByUser:true,note:typeof provided.rightsNote==='string'?provided.rightsNote.slice(0,1000):'Người dùng xác nhận có quyền sử dụng cá nhân, không cấp quyền đăng lại.'},verification:{method:'Người dùng xác nhận đã đối chiếu; app không xác minh quyền nhà xuất bản hoặc suy đoán phần còn thiếu.',checkedAt:new Date().toISOString(),matchedByUser:true,transcriptProvided:turns.length>0},documents:documents.map(file=>({name:file.name,url:`/api/assets/${file.id}`,sha256:file.sha256}))};
+    const source={id:`personal-source:${audio.sha256}`,name,book,test,url,answerLocation,kind:ai?'ai':'user',materialType:ai?'ai-generated-exercise':provided.materialType,questionNumbers:normalized.map(q=>q.number),questionCount:normalized.length,rights:{mode:'personal-upload',confirmedByUser:true,note:typeof provided.rightsNote==='string'?provided.rightsNote.slice(0,1000):'Người dùng xác nhận có quyền sử dụng cá nhân, không cấp quyền đăng lại.'},verification:{method:'Người dùng xác nhận đã đối chiếu; app không xác minh quyền nhà xuất bản hoặc suy đoán phần còn thiếu.',checkedAt:new Date().toISOString(),matchedByUser:true,transcriptProvided:turns.length>0,transcriptOrigin:['source','asr','none'].includes(manifest.generation?.transcriptOrigin)?manifest.generation.transcriptOrigin:'source',questionsGeneratedByAI:ai},documents:documents.map(file=>({name:file.name,url:`/api/assets/${file.id}`,sha256:file.sha256}))};
     const audioInfo={kind:'user-file',url:`/api/assets/${audio.id}`,source:name,ready:true,sha256:audio.sha256,mime:audio.mime};
-    const exercise={id,version:'1',part,title,description:'Tài liệu do người dùng cung cấp; quyền và việc khớp audio/đề/key do người dùng xác nhận.',original:false,source,audio:audioInfo,units:[{id:'personal-unit',title,context:`${book} · ${test}`,audio:audioInfo,transcript:turns,questions:normalized}]};
-    this.db.exec('BEGIN IMMEDIATE');try{for(const file of [audio,...documents])this.db.prepare('INSERT INTO personal_assets(id,user_id,name,mime,sha256,bytes) VALUES(?,?,?,?,?,?)').run(file.id,userId,file.name,file.mime,file.sha256,file.bytes);this.db.prepare('INSERT INTO personal_materials(id,user_id,exercise_json,created_at) VALUES(?,?,?,?)').run(id,userId,JSON.stringify(exercise),new Date().toISOString());this.db.exec('COMMIT');}catch(error){this.db.exec('ROLLBACK');throw error;}
-    return exercise;
+    const exercise={id,version:'1',part,title,description:ai?'Câu hỏi và đáp án do AI soạn từ audio/tài liệu cá nhân; thống kê riêng ở nhóm AI, không phải đề gốc.':general?'Nghe tổng quát; thống kê riêng, không phải TOEIC. Học liệu và đáp án do người dùng cung cấp.':'Tài liệu do người dùng cung cấp; quyền và việc khớp audio/đề/key do người dùng xác nhận.',original:false,source,audio:audioInfo,units:[{id:'personal-unit',title,context:`${book} · ${test}`,audio:audioInfo,transcript:turns,questions:normalized}]};
+    const identity=fingerprint(exercise);
+    this.db.exec('BEGIN IMMEDIATE');
+    try{
+      // Backfill imports made before fingerprints existed; preserve their IDs/history.
+      for(const old of this.db.prepare('SELECT id,exercise_json FROM personal_materials WHERE user_id=? AND fingerprint IS NULL').all(userId))this.db.prepare('UPDATE personal_materials SET fingerprint=? WHERE id=? AND user_id=?').run(fingerprint(JSON.parse(old.exercise_json)),old.id,userId);
+      const existing=this.db.prepare('SELECT id,exercise_json,deleted_at FROM personal_materials WHERE user_id=? AND fingerprint=? ORDER BY (deleted_at IS NOT NULL),created_at,id LIMIT 1').get(userId,identity);
+      if(existing){
+        if(existing.deleted_at)this.db.prepare('UPDATE personal_materials SET deleted_at=NULL WHERE id=? AND user_id=?').run(existing.id,userId);
+        this.db.exec('COMMIT');return {...JSON.parse(existing.exercise_json),importStatus:existing.deleted_at?'restored':'existing'};
+      }
+      for(const file of [audio,...documents])this.db.prepare('INSERT INTO personal_assets(id,user_id,name,mime,sha256,bytes) VALUES(?,?,?,?,?,?)').run(file.id,userId,file.name,file.mime,file.sha256,file.bytes);
+      this.db.prepare('INSERT INTO personal_materials(id,user_id,exercise_json,created_at,fingerprint) VALUES(?,?,?,?,?)').run(id,userId,JSON.stringify(exercise),new Date().toISOString(),identity);
+      this.db.exec('COMMIT');return {...exercise,importStatus:'created'};
+    }catch(error){this.db.exec('ROLLBACK');throw error;}
   }
 }
 module.exports={MaterialLibrary};
